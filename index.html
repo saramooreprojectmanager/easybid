@@ -86,8 +86,8 @@
 
   <h2>Markup</h2>
   <div class="grid-4" style="max-width:900px">
-    <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="12" /></label>
-    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.44" /></label>
+    <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="20" /></label>
+    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.625" /></label>
     <label><span>Tax $ (auto)</span><input id="taxDollars" disabled /></label>
     <label><span>Contingency %</span><input id="contingencyPct" type="number" inputmode="decimal" value="5" /></label>
   </div>
@@ -139,7 +139,7 @@
 
     // ------- Items State -------
     let items = [];
-    function defaultItem() { return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "65" }; }
+    function defaultItem() { return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "70" }; }
     function addRow(it = defaultItem()) { items.push(it); render(); }
     function removeRow(id) { items = items.filter((x) => x.id !== id); render(); }
 
