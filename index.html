@@ -1,0 +1,327 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>EasyBid — Contractor Bid Tool</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 12px; }
+    h2 { margin: 24px 0 8px; }
+    input, textarea, button, select { font: inherit; padding: 6px 8px; }
+    input, textarea, select { border: 1px solid #ccc; border-radius: 6px; width: 100%; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+    th { background: #fafafa; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top: 12px; }
+    .totals { border:1px solid #eee; border-radius: 8px; padding: 12px; background:#fafafa; max-width: 420px;}
+    .right { text-align:right; white-space:nowrap; }
+    .muted { color:#666; font-size: 12px; }
+    .nowrap { white-space: nowrap; }
+    .status { background:#f6f8fa; border:1px solid #e5e7eb; padding:8px 12px; border-radius:8px; margin:12px 0; font-size:12px; color:#444;}
+    @media print {.no-print { display:none !important; } body { margin: 0.5in; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    label > span { font-size: 12px; color:#555; display:block; margin-bottom:4px; }
+  </style>
+</head>
+<body>
+  <h1>EasyBid — Contractor Bid Tool</h1>
+  <div class="muted">Add your items, set markup, send a tracker row to Google Sheets, and create a Google Doc proposal.</div>
+
+  <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
+
+  <h2>Company</h2>
+  <div class="grid-2">
+    <label><span>Company name</span><input id="coName" value="Moore Builder & Sons" /></label>
+    <label><span>Phone</span><input id="coPhone" value="505-252-0930" /></label>
+  </div>
+  <div class="grid-2">
+    <label><span>Email</span><input id="coEmail" value="moorebuilderandsons@gmail.com" /></label>
+    <label><span>License #</span><input id="coLicense" value="Pending" /></label>
+  </div>
+  <label><span>Address</span><input id="coAddress" value="Placitas, NM 87043" style="margin-bottom:8px;" /></label>
+
+  <h2>Client</h2>
+  <div class="grid-2">
+    <label><span>Client name</span><input id="clientName" /></label>
+    <label><span>Client email</span><input id="clientEmail" /></label>
+  </div>
+  <div class="grid-2">
+    <label><span>Client phone</span><input id="clientPhone" /></label>
+    <label><span>Client address</span><input id="clientAddress" /></label>
+  </div>
+
+  <h2>Project</h2>
+  <div class="grid-2">
+    <label><span>Project title</span><input id="projTitle" value="Untitled Bid" /></label>
+    <label><span>Reference #</span><input id="projRef" /></label>
+  </div>
+  <div class="grid-2">
+    <label><span>Site address</span><input id="projSite" /></label>
+    <label><span>Valid (days)</span><input id="projValid" type="number" value="30" /></label>
+  </div>
+
+  <h2>Line Items</h2>
+  <table id="itemsTable">
+    <thead>
+      <tr>
+        <th style="width:24%">Name</th>
+        <th class="nowrap">Qty</th>
+        <th class="nowrap">Unit</th>
+        <th class="nowrap">Unit Cost</th>
+        <th class="nowrap">Labor Hrs</th>
+        <th class="nowrap">Labor Rate</th>
+        <th class="right nowrap">Material $</th>
+        <th class="right nowrap">Labor $</th>
+        <th class="no-print"></th>
+      </tr>
+    </thead>
+    <tbody id="itemsBody"></tbody>
+  </table>
+  <div class="actions no-print">
+    <button id="addLineBtn">Add line</button>
+    <button id="clearBtn">Clear all</button>
+  </div>
+
+  <h2>Markup</h2>
+  <div class="grid-4" style="max-width:900px">
+    <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="12" /></label>
+    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.44" /></label>
+    <label><span>Tax $ (auto)</span><input id="taxDollars" disabled /></label>
+    <label><span>Contingency %</span><input id="contingencyPct" type="number" inputmode="decimal" value="5" /></label>
+  </div>
+
+  <h2>Notes</h2>
+  <textarea id="notes" rows="4"></textarea>
+
+  <h2>Terms</h2>
+  <textarea id="terms" rows="3">Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.</textarea>
+
+  <h2>Totals</h2>
+  <div class="totals">
+    <div>Materials: <span id="matTotal" class="right"></span></div>
+    <div>Labor: <span id="labTotal" class="right"></span></div>
+    <div>Base: <span id="baseTotal" class="right"></span></div>
+    <div>Contingency: <span id="contTotal" class="right"></span></div>
+    <div>Profit: <span id="profitTotal" class="right"></span></div>
+    <div>Tax: <span id="taxTotal" class="right"></span></div>
+    <div style="border-top:1px solid #ddd; margin:8px 0;"></div>
+    <div><strong>Total: <span id="grandTotal" class="right"></span></strong></div>
+  </div>
+
+  <div class="actions no-print" style="margin-top:16px;">
+    <button id="sendToSheetsBtn">Send to Google Sheets</button>
+    <button id="createDocBtn">Create Google Doc Proposal</button>
+    <button id="printBtn">Print / Save PDF</button>
+  </div>
+
+  <script>
+    // ===========================
+    // 1) PASTE YOUR WEB APP URL HERE (must end with /exec)
+    // ===========================
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw-mYNQqYOagdY0mfVPau_M1G1OcQGA0j8KhCv1Yk01n6h9vPFpGODZgmbRYc1Ryr_Y/exec";
+
+    (function showUrl(){
+      const el = document.getElementById("urlStatus");
+      el.innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>";
+      console.log("WEB_APP_URL =", WEB_APP_URL);
+    })();
+
+    function isValidAppsScriptUrl(u){
+      return typeof u === "string" && /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u.trim());
+    }
+
+    // ------- Utilities -------
+    const $ = (id) => document.getElementById(id);
+    const currency = (n) => (isFinite(n) ? n : 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
+    const num = (v) => (v === "" || v == null ? 0 : Number(v));
+
+    // ------- Items State -------
+    let items = [];
+    function defaultItem() { return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "65" }; }
+    function addRow(it = defaultItem()) { items.push(it); render(); }
+    function removeRow(id) { items = items.filter((x) => x.id !== id); render(); }
+
+    // ------- Calculations -------
+    function computeTotals() {
+      const material = items.reduce((s, it) => s + num(it.qty) * num(it.unitCost), 0);
+      const labor    = items.reduce((s, it) => s + num(it.laborHours) * num(it.laborRate), 0);
+      const base     = material + labor;
+      const contingencyPct = num($("contingencyPct").value);
+      const profitPct      = num($("profitPct").value);
+      const taxPct         = num($("taxPct").value);
+      const contingency = (contingencyPct / 100) * base;
+      const profit      = (profitPct  / 100) * (base + contingency);
+      const taxable     = base + contingency + profit;    // Subtotal
+      const tax         = (taxPct   / 100) * taxable;
+      const total       = taxable + tax;
+      return { material, labor, base, contingency, profit, subtotal: taxable, tax, total };
+    }
+    function updateTotalsUI() {
+      const t = computeTotals();
+      $("matTotal").textContent    = currency(t.material);
+      $("labTotal").textContent    = currency(t.labor);
+      $("baseTotal").textContent   = currency(t.base);
+      $("contTotal").textContent   = currency(t.contingency);
+      $("profitTotal").textContent = currency(t.profit);
+      $("taxTotal").textContent    = currency(t.tax);
+      $("taxDollars").value        = currency(t.tax);
+      $("grandTotal").textContent  = currency(t.total);
+    }
+
+    // ------- Render (no table rebuild while typing) -------
+    function render() {
+      const tbody = $("itemsBody"); tbody.innerHTML = "";
+      items.forEach((it) => {
+        const tr = document.createElement("tr");
+
+        const tdMat = document.createElement("td"); tdMat.className = "right";
+        const tdLab = document.createElement("td"); tdLab.className = "right";
+        const updateRowComputed = () => {
+          tdMat.textContent = currency(num(it.qty) * num(it.unitCost));
+          tdLab.textContent = currency(num(it.laborHours) * num(it.laborRate));
+        };
+
+        const makeCellInput = (prop, opts = {}) => {
+          const td = document.createElement("td");
+          const input = document.createElement("input");
+          if (opts.type) input.type = opts.type;
+          if (opts.inputmode) input.setAttribute("inputmode", opts.inputmode);
+          if (opts.step) input.setAttribute("step", opts.step);
+          input.value = it[prop] ?? "";
+          input.oninput = (e) => { it[prop] = e.target.value; updateRowComputed(); updateTotalsUI(); };
+          td.appendChild(input);
+          return td;
+        };
+
+        const tdName     = makeCellInput("name");
+        const tdQty      = makeCellInput("qty",        { type: "number", inputmode: "decimal", step: "any" });
+        const tdUnit     = makeCellInput("unit");
+        const tdUnitCost = makeCellInput("unitCost",   { type: "number", inputmode: "decimal", step: "any" });
+        const tdLaborH   = makeCellInput("laborHours", { type: "number", inputmode: "decimal", step: "any" });
+        const tdLaborR   = makeCellInput("laborRate",  { type: "number", inputmode: "decimal", step: "any" });
+
+        const tdDel = document.createElement("td"); tdDel.className = "no-print";
+        const delBtn = document.createElement("button"); delBtn.textContent = "✕"; delBtn.onclick = () => removeRow(it.id);
+        tdDel.appendChild(delBtn);
+
+        updateRowComputed();
+        [tdName, tdQty, tdUnit, tdUnitCost, tdLaborH, tdLaborR, tdMat, tdLab, tdDel].forEach(td => tr.appendChild(td));
+        tbody.appendChild(tr);
+      });
+      updateTotalsUI();
+    }
+
+    // ------- Build tracker row (optional log with Doc URL) -------
+    function buildTrackerRow() {
+      const t = computeTotals();
+      return [
+        new Date().toISOString(),
+        $("projTitle").value, $("clientName").value, $("clientEmail").value, $("clientPhone").value,
+        $("projSite").value, $("projRef").value, $("projValid").value || 30,
+        t.material.toFixed(2), t.labor.toFixed(2), t.base.toFixed(2),
+        0, "0.00",
+        Number($("contingencyPct").value || 0), t.contingency.toFixed(2),
+        Number($("profitPct").value || 0), t.profit.toFixed(2),
+        Number($("taxPct").value || 0), t.tax.toFixed(2),
+        t.total.toFixed(2), items.length
+      ];
+    }
+
+    // ------- Send helper (local-file friendly) -------
+    async function postJson(payload) {
+      if (!isValidAppsScriptUrl(WEB_APP_URL)) {
+        alert("Your Web App URL doesn’t look right. Make sure it ends with /exec.");
+        return { ok: false };
+      }
+      const body = JSON.stringify(payload);
+
+      // If served over https, try to read JSON back
+      if (location.protocol.startsWith("http")) {
+        try {
+          const res = await fetch(WEB_APP_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body
+          });
+          return await res.json();
+        } catch (e) {
+          console.warn("Fetch (cors) failed, falling back to beacon/no-cors.", e);
+        }
+      }
+
+      // Local file fallback — fire-and-forget (no readable response)
+      try {
+        if (navigator.sendBeacon) {
+          const blob = new Blob([body], { type: "text/plain;charset=UTF-8" });
+          navigator.sendBeacon(WEB_APP_URL, blob);
+          return { ok: true };
+        }
+        await fetch(WEB_APP_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=UTF-8" },
+          body
+        });
+        return { ok: true };
+      } catch (e) {
+        console.error("Send failed:", e);
+        return { ok: false, error: String(e) };
+      }
+    }
+
+    // ------- Actions -------
+    async function sendToSheetsAction() {
+      const row = buildTrackerRow();
+      const payload = { row }; // keep legacy row-only write
+      const { ok } = await postJson(payload);
+      alert(ok ? "Sent to Google Sheets." : "Failed to send.");
+    }
+
+    async function createDocAction() {
+      const t = computeTotals();
+      const proposal = {
+        company: {
+          name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value,
+          license: $("coLicense").value, address: $("coAddress").value
+        },
+        client: {
+          name: $("clientName").value, email: $("clientEmail").value,
+          phone: $("clientPhone").value, address: $("clientAddress").value
+        },
+        project: {
+          title: $("projTitle").value, ref: $("projRef").value,
+          site: $("projSite").value, validDays: $("projValid").value || 30,
+          notes: $("notes").value, terms: $("terms").value
+        },
+        items: items.map(it => ({ name: it.name || "" })), // names only
+        totals: { base: t.base, contingency: t.contingency, profit: t.profit, subtotal: t.subtotal, tax: t.tax, total: t.total }
+      };
+      const payload = { action: "create_proposal", proposal, trackerRow: buildTrackerRow() };
+
+      const res = await postJson(payload);
+      if (res && res.ok && res.docUrl) {
+        window.open(res.docUrl, "_blank");
+        alert("Google Doc created. Opening now.");
+      } else {
+        alert("Proposal request sent. If this page is opened locally, check your Google Sheet for the Doc URL.");
+      }
+    }
+
+    function printNow() { window.print(); }
+
+    // ------- Init -------
+    $("addLineBtn").onclick = () => addRow();
+    $("clearBtn").onclick = () => { items = []; addRow(); };
+    $("sendToSheetsBtn").onclick = sendToSheetsAction;
+    $("createDocBtn").onclick = createDocAction;
+    $("printBtn").onclick = printNow;
+    ["profitPct", "taxPct", "contingencyPct"].forEach((id) => {
+      $(id).addEventListener("input", updateTotalsUI);
+      $(id).addEventListener("change", updateTotalsUI);
+    });
+    addRow();
+  </script>
+</body>
+</html>
