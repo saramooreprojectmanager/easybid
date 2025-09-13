@@ -14,9 +14,10 @@
     th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
     th { background: #fafafa; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
     .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top: 12px; }
-    .totals { border:1px solid #eee; border-radius: 8px; padding: 12px; background:#fafafa; max-width: 420px;}
+    .totals { border:1px solid #eee; border-radius: 8px; padding: 12px; background:#fafafa; max-width: 460px;}
     .right { text-align:right; white-space:nowrap; }
     .muted { color:#666; font-size: 12px; }
     .nowrap { white-space: nowrap; }
@@ -27,7 +28,7 @@
 </head>
 <body>
   <h1>EasyBid — Contractor Bid Tool</h1>
-  <div class="muted">Add your items, set markup, send a tracker row to Google Sheets, and create a Google Doc proposal.</div>
+  <div class="muted">Create a bid, save with a BID_ID, recall later for approval → invoice. Send to Google Sheets or create a Google Doc proposal.</div>
 
   <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
 
@@ -38,9 +39,8 @@
   </div>
   <div class="grid-2">
     <label><span>Email</span><input id="coEmail" value="moorebuilderandsons@gmail.com" /></label>
-    <label><span>License #</span><input id="coLicense" value="Pending" /></label>
+    <label><span>Address</span><input id="coAddress" value="Placitas, NM 87043" /></label>
   </div>
-  <label><span>Address</span><input id="coAddress" value="Placitas, NM 87043" style="margin-bottom:8px;" /></label>
 
   <h2>Client</h2>
   <div class="grid-2">
@@ -110,14 +110,18 @@
     <div><strong>Total: <span id="grandTotal" class="right"></span></strong></div>
   </div>
 
-  <div class="actions no-print" style="margin-top:16px;">
+  <h2 class="no-print">Workflow</h2>
+  <div class="actions no-print">
+    <button id="saveBidBtn">Save Bid (get BID_ID)</button>
+    <input id="loadBidId" placeholder="Enter BID_ID e.g., BID-20250912-1234" style="min-width:320px"/>
+    <button id="loadBidBtn">Load Bid</button>
+    <button id="approveBidBtn">Approve → Create Invoice</button>
+  </div>
+
+  <div class="actions no-print" style="margin-top:12px;">
     <button id="sendToSheetsBtn">Send to Google Sheets</button>
     <button id="createDocBtn">Create Google Doc Proposal</button>
-    <button id="printBtn">Save as PDF</button>
-    <button id="saveBidBtn">Save Bid (get BID ID)</button>
-<input id="loadBidId" placeholder="Enter BID_ID e.g., BID-20250912-1234" />
-<button id="loadBidBtn">Load Bid</button>
-<button id="approveBidBtn">Approve → Create Invoice</button>
+    <button id="printBtn">Print / Save PDF</button>
   </div>
 
   <script>
@@ -126,6 +130,7 @@
     // ===========================
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXxAnrMSd7-w6BCokMWF087URRhAIicGR1mIndWJjRBfog7TGRz0ojv_0LttbhyGFv/exec";
 
+    // Show URL in UI + console
     (function showUrl(){
       const el = document.getElementById("urlStatus");
       el.innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>";
@@ -174,7 +179,7 @@
       $("grandTotal").textContent  = currency(t.total);
     }
 
-    // ------- Render (no table rebuild while typing) -------
+    // ------- Render (stable inputs) -------
     function render() {
       const tbody = $("itemsBody"); tbody.innerHTML = "";
       items.forEach((it) => {
@@ -217,7 +222,7 @@
       updateTotalsUI();
     }
 
-    // ------- Build tracker row (optional log with Doc URL) -------
+    // ------- Tracker row (for Sheets logging) -------
     function buildTrackerRow() {
       const t = computeTotals();
       return [
@@ -233,83 +238,110 @@
       ];
     }
 
-    // ------- Send helper (local-file friendly) -------
-    async function postJson(payload) {
-      if (!isValidAppsScriptUrl(WEB_APP_URL)) {
-        alert("Your Web App URL doesn’t look right. Make sure it ends with /exec.");
-        return { ok: false };
-      }
-      const body = JSON.stringify(payload);
+    // ------- Build a BID object (names only) -------
+    function buildBidFromForm() {
+      const t = computeTotals();
+      return {
+        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
+        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+        project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
+        items: items.map(it => ({ name: it.name || "" })),
+        totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
+      };
+    }
 
-      // If served over https, try to read JSON back
+    // ------- Post helper (HTTPS JSON; local fallbacks) -------
+    async function postJson(payload){
+      // Prefer full JSON when hosted (https)
       if (location.protocol.startsWith("http")) {
-        try {
-          const res = await fetch(WEB_APP_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body
-          });
-          return await res.json();
-        } catch (e) {
-          console.warn("Fetch (cors) failed, falling back to beacon/no-cors.", e);
-        }
+        const res = await fetch(WEB_APP_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+        return await res.json();
       }
-
-      // Local file fallback — fire-and-forget (no readable response)
-      try {
-        if (navigator.sendBeacon) {
-          const blob = new Blob([body], { type: "text/plain;charset=UTF-8" });
-          navigator.sendBeacon(WEB_APP_URL, blob);
-          return { ok: true };
-        }
-        await fetch(WEB_APP_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=UTF-8" },
-          body
-        });
-        return { ok: true };
-      } catch (e) {
-        console.error("Send failed:", e);
-        return { ok: false, error: String(e) };
+      // Local file fallbacks (no readable response)
+      const body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
+        navigator.sendBeacon(WEB_APP_URL, blob);
+        return { ok:true, _offline:true };
       }
+      await fetch(WEB_APP_URL, { method:"POST", mode:"no-cors", headers:{ "Content-Type":"text/plain;charset=UTF-8" }, body });
+      return { ok:true, _offline:true };
     }
 
     // ------- Actions -------
     async function sendToSheetsAction() {
       const row = buildTrackerRow();
-      const payload = { row }; // keep legacy row-only write
-      const { ok } = await postJson(payload);
+      const { ok } = await postJson({ row }); // legacy row write supported by your script
       alert(ok ? "Sent to Google Sheets." : "Failed to send.");
     }
 
     async function createDocAction() {
       const t = computeTotals();
       const proposal = {
-        company: {
-          name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value,
-          license: $("coLicense").value, address: $("coAddress").value
-        },
-        client: {
-          name: $("clientName").value, email: $("clientEmail").value,
-          phone: $("clientPhone").value, address: $("clientAddress").value
-        },
-        project: {
-          title: $("projTitle").value, ref: $("projRef").value,
-          site: $("projSite").value, validDays: $("projValid").value || 30,
-          notes: $("notes").value, terms: $("terms").value
-        },
+        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
+        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+        project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
         items: items.map(it => ({ name: it.name || "" })), // names only
         totals: { base: t.base, contingency: t.contingency, profit: t.profit, subtotal: t.subtotal, tax: t.tax, total: t.total }
       };
       const payload = { action: "create_proposal", proposal, trackerRow: buildTrackerRow() };
-
       const res = await postJson(payload);
       if (res && res.ok && res.docUrl) {
         window.open(res.docUrl, "_blank");
         alert("Google Doc created. Opening now.");
       } else {
-        alert("Proposal request sent. If this page is opened locally, check your Google Sheet for the Doc URL.");
+        alert("Proposal request sent. If opened locally, check the Sheet for the Doc URL.");
+      }
+    }
+
+    let CURRENT_BID_ID = null;
+
+    async function saveBid() {
+      const bid = buildBidFromForm();
+      const res = await postJson({ action: "save_bid", bid, createProposalDoc: true });
+      if (!res || !res.ok) return alert("Save failed.");
+      if (res.bidId) {
+        CURRENT_BID_ID = res.bidId;
+        try { await navigator.clipboard.writeText(res.bidId); } catch {}
+        alert(`Saved.\nBID_ID = ${res.bidId}\n(The ID is copied to your clipboard.)`);
+      } else {
+        alert("Saved.\nThis page may be running locally, so the BID_ID couldn’t be read.\nOpen the Google Sheet → Bids tab → newest row for the BID_ID.\n(Use the GitHub Pages URL to see the ID immediately.)");
+      }
+    }
+
+    async function loadBid() {
+      const bidId = $("loadBidId").value.trim();
+      if (!bidId) return alert("Enter a BID_ID first.");
+      const res = await postJson({ action: "get_bid", bidId });
+      if (!res || !res.ok) return alert("Bid not found.");
+      const b = res.bid; CURRENT_BID_ID = b.bidId || bidId;
+
+      // Fill fields
+      $("coName").value = b.company?.name || ""; $("coPhone").value = b.company?.phone || "";
+      $("coEmail").value = b.company?.email || ""; $("coAddress").value = b.company?.address || "";
+      $("clientName").value = b.client?.name || ""; $("clientEmail").value = b.client?.email || "";
+      $("clientPhone").value = b.client?.phone || ""; $("clientAddress").value = b.client?.address || "";
+      $("projTitle").value = b.project?.title || ""; $("projSite").value = b.project?.site || "";
+      $("projRef").value = b.project?.ref || ""; $("projValid").value = b.project?.validDays || 30;
+      $("notes").value = b.project?.notes || ""; $("terms").value = b.project?.terms || "";
+
+      // Items
+      items = [];
+      (b.items || []).forEach(it => items.push({ id: Math.random().toString(36).slice(2), name: it.name || "", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }));
+      if (items.length === 0) items.push(defaultItem());
+      render();
+      alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
+    }
+
+    async function approveBid() {
+      const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
+      if (!bidId) return alert("Load a BID_ID first (or paste one).");
+      const res = await postJson({ action: "approve_bid", bidId });
+      if (res && res.ok) {
+        alert(`Invoice created: ${res.invoiceNumber || "(see Invoices sheet)"}`);
+        if (res.invoiceUrl) window.open(res.invoiceUrl, "_blank");
+      } else {
+        alert("Approval failed.");
       }
     }
 
@@ -320,99 +352,15 @@
     $("clearBtn").onclick = () => { items = []; addRow(); };
     $("sendToSheetsBtn").onclick = sendToSheetsAction;
     $("createDocBtn").onclick = createDocAction;
+    $("saveBidBtn").onclick = saveBid;
+    $("loadBidBtn").onclick = loadBid;
+    $("approveBidBtn").onclick = approveBid;
     $("printBtn").onclick = printNow;
     ["profitPct", "taxPct", "contingencyPct"].forEach((id) => {
       $(id).addEventListener("input", updateTotalsUI);
       $(id).addEventListener("change", updateTotalsUI);
     });
     addRow();
-
-    // Keep track of which bid is loaded (for approval later)
-let CURRENT_BID_ID = null;
-
-// Build a bid object from the current form (names only for items)
-function buildBidFromForm() {
-  const t = computeTotals();
-  return {
-    company: {
-      name: $("coName").value, phone: $("coPhone").value,
-      email: $("coEmail").value, address: $("coAddress").value
-    },
-    client: {
-      name: $("clientName").value, email: $("clientEmail").value,
-      phone: $("clientPhone").value, address: $("clientAddress").value
-    },
-    project: {
-      title: $("projTitle").value, site: $("projSite").value,
-      ref: $("projRef").value, validDays: $("projValid").value || 30,
-      notes: $("notes").value, terms: $("terms").value
-    },
-    items: items.map(it => ({ name: it.name || "" })),
-    totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
-  };
-}
-
-async function saveBid() {
-  const bid = buildBidFromForm();
-  const res = await postJson({ action: "save_bid", bid, createProposalDoc: true }); // also makes a proposal Doc now
-  if (res && res.ok) {
-    CURRENT_BID_ID = res.bidId;
-    alert(`Saved. BID_ID = ${res.bidId}${res.proposalUrl ? "\nProposal Doc created." : ""}`);
-  } else {
-    alert("Save failed.");
-  }
-}
-
-async function loadBid() {
-  const bidId = $("loadBidId").value.trim();
-  if (!bidId) return alert("Enter a BID_ID first.");
-  const res = await postJson({ action: "get_bid", bidId });
-  if (!res || !res.ok) return alert("Bid not found.");
-  const b = res.bid;
-  CURRENT_BID_ID = b.bidId || bidId;
-
-  // Fill form
-  $("coName").value = b.company?.name || "";
-  $("coPhone").value = b.company?.phone || "";
-  $("coEmail").value = b.company?.email || "";
-  $("coAddress").value = b.company?.address || "";
-
-  $("clientName").value = b.client?.name || "";
-  $("clientEmail").value = b.client?.email || "";
-  $("clientPhone").value = b.client?.phone || "";
-  $("clientAddress").value = b.client?.address || "";
-
-  $("projTitle").value = b.project?.title || "";
-  $("projSite").value  = b.project?.site || "";
-  $("projRef").value   = b.project?.ref || "";
-  $("projValid").value = b.project?.validDays || 30;
-  $("notes").value     = b.project?.notes || "";
-  $("terms").value     = b.project?.terms || "";
-
-  // Items (names only)
-  items = [];
-  (b.items || []).forEach(it => items.push({ id: Math.random().toString(36).slice(2), name: it.name || "", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }));
-  if (items.length === 0) items.push({ id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" });
-  render();
-  alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
-}
-
-async function approveBid() {
-  const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
-  if (!bidId) return alert("Load a BID_ID first (or paste one).");
-  const res = await postJson({ action: "approve_bid", bidId });
-  if (res && res.ok) {
-    alert(`Invoice created: ${res.invoiceNumber}`);
-    if (res.invoiceUrl) window.open(res.invoiceUrl, "_blank");
-  } else {
-    alert("Approval failed.");
-  }
-}
-
-// Wire buttons
-$("saveBidBtn").onclick = saveBid;
-$("loadBidBtn").onclick = loadBid;
-$("approveBidBtn").onclick = approveBid;
   </script>
 </body>
 </html>
