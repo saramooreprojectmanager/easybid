@@ -114,13 +114,17 @@
     <button id="sendToSheetsBtn">Send to Google Sheets</button>
     <button id="createDocBtn">Create Google Doc Proposal</button>
     <button id="printBtn">Save as PDF</button>
+    <button id="saveBidBtn">Save Bid (get BID ID)</button>
+<input id="loadBidId" placeholder="Enter BID_ID e.g., BID-20250912-1234" />
+<button id="loadBidBtn">Load Bid</button>
+<button id="approveBidBtn">Approve → Create Invoice</button>
   </div>
 
   <script>
     // ===========================
     // 1) PASTE YOUR WEB APP URL HERE (must end with /exec)
     // ===========================
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw-mYNQqYOagdY0mfVPau_M1G1OcQGA0j8KhCv1Yk01n6h9vPFpGODZgmbRYc1Ryr_Y/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwBGDadUIVibsDUfo3EX4xaUgZyO-W9XwG6VkcHJP2IVjkDDQHFSXB6rCYs-dIVme4P/exec";
 
     (function showUrl(){
       const el = document.getElementById("urlStatus");
@@ -322,6 +326,93 @@
       $(id).addEventListener("change", updateTotalsUI);
     });
     addRow();
+
+    // Keep track of which bid is loaded (for approval later)
+let CURRENT_BID_ID = null;
+
+// Build a bid object from the current form (names only for items)
+function buildBidFromForm() {
+  const t = computeTotals();
+  return {
+    company: {
+      name: $("coName").value, phone: $("coPhone").value,
+      email: $("coEmail").value, address: $("coAddress").value
+    },
+    client: {
+      name: $("clientName").value, email: $("clientEmail").value,
+      phone: $("clientPhone").value, address: $("clientAddress").value
+    },
+    project: {
+      title: $("projTitle").value, site: $("projSite").value,
+      ref: $("projRef").value, validDays: $("projValid").value || 30,
+      notes: $("notes").value, terms: $("terms").value
+    },
+    items: items.map(it => ({ name: it.name || "" })),
+    totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
+  };
+}
+
+async function saveBid() {
+  const bid = buildBidFromForm();
+  const res = await postJson({ action: "save_bid", bid, createProposalDoc: true }); // also makes a proposal Doc now
+  if (res && res.ok) {
+    CURRENT_BID_ID = res.bidId;
+    alert(`Saved. BID_ID = ${res.bidId}${res.proposalUrl ? "\nProposal Doc created." : ""}`);
+  } else {
+    alert("Save failed.");
+  }
+}
+
+async function loadBid() {
+  const bidId = $("loadBidId").value.trim();
+  if (!bidId) return alert("Enter a BID_ID first.");
+  const res = await postJson({ action: "get_bid", bidId });
+  if (!res || !res.ok) return alert("Bid not found.");
+  const b = res.bid;
+  CURRENT_BID_ID = b.bidId || bidId;
+
+  // Fill form
+  $("coName").value = b.company?.name || "";
+  $("coPhone").value = b.company?.phone || "";
+  $("coEmail").value = b.company?.email || "";
+  $("coAddress").value = b.company?.address || "";
+
+  $("clientName").value = b.client?.name || "";
+  $("clientEmail").value = b.client?.email || "";
+  $("clientPhone").value = b.client?.phone || "";
+  $("clientAddress").value = b.client?.address || "";
+
+  $("projTitle").value = b.project?.title || "";
+  $("projSite").value  = b.project?.site || "";
+  $("projRef").value   = b.project?.ref || "";
+  $("projValid").value = b.project?.validDays || 30;
+  $("notes").value     = b.project?.notes || "";
+  $("terms").value     = b.project?.terms || "";
+
+  // Items (names only)
+  items = [];
+  (b.items || []).forEach(it => items.push({ id: Math.random().toString(36).slice(2), name: it.name || "", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }));
+  if (items.length === 0) items.push({ id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" });
+  render();
+  alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
+}
+
+async function approveBid() {
+  const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
+  if (!bidId) return alert("Load a BID_ID first (or paste one).");
+  const res = await postJson({ action: "approve_bid", bidId });
+  if (res && res.ok) {
+    alert(`Invoice created: ${res.invoiceNumber}`);
+    if (res.invoiceUrl) window.open(res.invoiceUrl, "_blank");
+  } else {
+    alert("Approval failed.");
+  }
+}
+
+// Wire buttons
+$("saveBidBtn").onclick = saveBid;
+$("loadBidBtn").onclick = loadBid;
+$("approveBidBtn").onclick = approveBid;
   </script>
 </body>
 </html>
