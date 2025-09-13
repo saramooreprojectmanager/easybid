@@ -309,29 +309,42 @@
       }
     }
 
-    async function loadBid() {
-      const bidId = $("loadBidId").value.trim();
-      if (!bidId) return alert("Enter a BID_ID first.");
-      const res = await postJson({ action: "get_bid", bidId });
-      if (!res || !res.ok) return alert("Bid not found.");
-      const b = res.bid; CURRENT_BID_ID = b.bidId || bidId;
+   async function loadBid() {
+  const raw = $("loadBidId").value || "";
+  const bidId = raw.trim();
+  if (!bidId) return alert("Enter a BID_ID first (e.g., BID-20250912-1234).");
 
-      // Fill fields
-      $("coName").value = b.company?.name || ""; $("coPhone").value = b.company?.phone || "";
-      $("coEmail").value = b.company?.email || ""; $("coAddress").value = b.company?.address || "";
-      $("clientName").value = b.client?.name || ""; $("clientEmail").value = b.client?.email || "";
-      $("clientPhone").value = b.client?.phone || ""; $("clientAddress").value = b.client?.address || "";
-      $("projTitle").value = b.project?.title || ""; $("projSite").value = b.project?.site || "";
-      $("projRef").value = b.project?.ref || ""; $("projValid").value = b.project?.validDays || 30;
-      $("notes").value = b.project?.notes || ""; $("terms").value = b.project?.terms || "";
+  const res = await postJson({ action: "get_bid", bidId });
+  console.log("get_bid response:", res);
 
-      // Items
-      items = [];
-      (b.items || []).forEach(it => items.push({ id: Math.random().toString(36).slice(2), name: it.name || "", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }));
-      if (items.length === 0) items.push(defaultItem());
-      render();
-      alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
-    }
+  if (!res || !res.ok) {
+    alert("Bid not found or server blocked the request."
+      + (res && res.error ? "\n\nDetails: " + res.error : ""));
+    return;
+  }
+
+  const b = res.bid;
+  CURRENT_BID_ID = b.bidId || bidId;
+
+  // Fill fields
+  $("coName").value = b.company?.name || ""; $("coPhone").value = b.company?.phone || "";
+  $("coEmail").value = b.company?.email || ""; $("coAddress").value = b.company?.address || "";
+  $("clientName").value = b.client?.name || ""; $("clientEmail").value = b.client?.email || "";
+  $("clientPhone").value = b.client?.phone || ""; $("clientAddress").value = b.client?.address || "";
+  $("projTitle").value = b.project?.title || ""; $("projSite").value = b.project?.site || "";
+  $("projRef").value = b.project?.ref || ""; $("projValid").value = b.project?.validDays || 30;
+  $("notes").value = b.project?.notes || ""; $("terms").value = b.project?.terms || "";
+
+  // Items (names only)
+  items = [];
+  (b.items || []).forEach(it => items.push({
+    id: Math.random().toString(36).slice(2),
+    name: it.name || "", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65"
+  }));
+  if (items.length === 0) items.push({ id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" });
+  render();
+  alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
+}
 
     async function approveBid() {
       const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
