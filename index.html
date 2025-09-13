@@ -115,6 +115,15 @@
     <button id="saveBidBtn">Save Bid (get BID_ID)</button>
     <input id="loadBidId" placeholder="Enter BID_ID e.g., BID-20250912-1234" style="min-width:320px"/>
     <button id="loadBidBtn">Load Bid</button>
+    <div class="no-print" style="margin-top:16px; border:1px solid #eee; border-radius:8px; padding:12px;">
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+    <strong>Recent Bids</strong>
+    <button id="refreshBidsBtn">Refresh</button>
+    <span class="muted">Click a row to load it</span>
+  </div>
+  <div id="bidsList" class="muted">No data yet.</div>
+</div>
+
     <button id="approveBidBtn">Approve → Create Invoice</button>
   </div>
 
@@ -122,6 +131,7 @@
     <button id="sendToSheetsBtn">Send to Google Sheets</button>
     <button id="createDocBtn">Create Google Doc Proposal</button>
     <button id="printBtn">Print / Save PDF</button>
+    
   </div>
 
   <script>
