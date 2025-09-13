@@ -27,7 +27,7 @@
 </head>
 <body>
   <h1>EasyBid — Contractor Bid Tool</h1>
-  <div class="muted">Create a bid, save with a BID_ID, recall later for approval → invoice. Send to Google Sheets or create a Google Doc proposal.</div>
+  <div class="muted">Save bids (with full line items), recall by BID_ID, approve → invoice, and create proposal Docs.</div>
 
   <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
 
@@ -62,7 +62,7 @@
   </div>
 
   <h2>Line Items</h2>
-  <table id="itemsTable">
+  <table>
     <thead>
       <tr>
         <th style="width:24%">Name</th>
@@ -123,7 +123,7 @@
     <button id="printBtn">Print / Save PDF</button>
   </div>
 
-  <!-- Recent Bids Panel -->
+  <!-- Recent Bids -->
   <div class="no-print" style="margin-top:16px; border:1px solid #eee; border-radius:8px; padding:12px;">
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
       <strong>Recent Bids</strong>
@@ -135,56 +135,51 @@
 
   <script>
     // ===========================
-    // 1) PASTE YOUR WEB APP URL HERE (must end with /exec)
+    // 1) PASTE YOUR WEB APP URL (must end with /exec)
     // ===========================
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXxAnrMSd7-w6BCokMWF087URRhAIicGR1mIndWJjRBfog7TGRz0ojv_0LttbhyGFv/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbywaxa6OkTn05gCaKUCI1nEJetWMgpMTRX8S64-O0Lx-hdaiTtby9rYMFW59oOMsFBJ/exec";
+    (function(){ document.getElementById("urlStatus").innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>"; })();
 
-    (function showUrl(){
-      const el = document.getElementById("urlStatus");
-      el.innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>";
-      console.log("WEB_APP_URL =", WEB_APP_URL);
-    })();
-
-    // ------- Utilities -------
+    // Utils
     const $ = (id) => document.getElementById(id);
     const currency = (n) => (isFinite(n) ? n : 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const num = (v) => (v === "" || v == null ? 0 : Number(v));
 
-    // ------- Items State -------
+    // Items state
     let items = [];
-    function defaultItem() { return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "70" }; }
-    function addRow(it = defaultItem()) { items.push(it); render(); }
-    function removeRow(id) { items = items.filter((x) => x.id !== id); render(); }
+    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"70" }; }
+    function addRow(it = defaultItem()){ items.push(it); render(); }
+    function removeRow(id){ items = items.filter(x => x.id !== id); render(); }
 
-    // ------- Calculations -------
-    function computeTotals() {
-      const material = items.reduce((s, it) => s + num(it.qty) * num(it.unitCost), 0);
-      const labor    = items.reduce((s, it) => s + num(it.laborHours) * num(it.laborRate), 0);
+    // Totals
+    function computeTotals(){
+      const material = items.reduce((s,it)=> s + num(it.qty)*num(it.unitCost), 0);
+      const labor    = items.reduce((s,it)=> s + num(it.laborHours)*num(it.laborRate), 0);
       const base     = material + labor;
       const contingencyPct = num($("contingencyPct").value);
       const profitPct      = num($("profitPct").value);
       const taxPct         = num($("taxPct").value);
-      const contingency = (contingencyPct / 100) * base;
-      const profit      = (profitPct  / 100) * (base + contingency);
-      const taxable     = base + contingency + profit;    // Subtotal
-      const tax         = (taxPct   / 100) * taxable;
-      const total       = taxable + tax;
-      return { material, labor, base, contingency, profit, subtotal: taxable, tax, total };
+      const contingency = (contingencyPct/100)*base;
+      const profit      = (profitPct/100)*(base + contingency);
+      const subtotal    = base + contingency + profit;
+      const tax         = (taxPct/100)*subtotal;
+      const total       = subtotal + tax;
+      return { material, labor, base, contingency, profit, subtotal, tax, total };
     }
-    function updateTotalsUI() {
+    function updateTotalsUI(){
       const t = computeTotals();
-      $("matTotal").textContent    = currency(t.material);
-      $("labTotal").textContent    = currency(t.labor);
-      $("baseTotal").textContent   = currency(t.base);
-      $("contTotal").textContent   = currency(t.contingency);
+      $("matTotal").textContent = currency(t.material);
+      $("labTotal").textContent = currency(t.labor);
+      $("baseTotal").textContent = currency(t.base);
+      $("contTotal").textContent = currency(t.contingency);
       $("profitTotal").textContent = currency(t.profit);
-      $("taxTotal").textContent    = currency(t.tax);
-      $("taxDollars").value        = currency(t.tax);
-      $("grandTotal").textContent  = currency(t.total);
+      $("taxTotal").textContent = currency(t.tax);
+      $("taxDollars").value = currency(t.tax);
+      $("grandTotal").textContent = currency(t.total);
     }
 
-    // ------- Render (stable inputs) -------
-    function render() {
+    // Render table
+    function render(){
       const tbody = $("itemsBody"); tbody.innerHTML = "";
       items.forEach((it) => {
         const tr = document.createElement("tr");
@@ -196,24 +191,24 @@
           tdLab.textContent = currency(num(it.laborHours) * num(it.laborRate));
         };
 
-        const makeCellInput = (prop, opts = {}) => {
+        const makeCellInput = (prop, opts={}) => {
           const td = document.createElement("td");
           const input = document.createElement("input");
           if (opts.type) input.type = opts.type;
           if (opts.inputmode) input.setAttribute("inputmode", opts.inputmode);
           if (opts.step) input.setAttribute("step", opts.step);
           input.value = it[prop] ?? "";
-          input.oninput = (e) => { it[prop] = e.target.value; updateRowComputed(); updateTotalsUI(); };
+          input.oninput = (e)=>{ it[prop] = e.target.value; updateRowComputed(); updateTotalsUI(); };
           td.appendChild(input);
           return td;
         };
 
         const tdName     = makeCellInput("name");
-        const tdQty      = makeCellInput("qty",        { type: "number", inputmode: "decimal", step: "any" });
+        const tdQty      = makeCellInput("qty",        { type:"number", inputmode:"decimal", step:"any" });
         const tdUnit     = makeCellInput("unit");
-        const tdUnitCost = makeCellInput("unitCost",   { type: "number", inputmode: "decimal", step: "any" });
-        const tdLaborH   = makeCellInput("laborHours", { type: "number", inputmode: "decimal", step: "any" });
-        const tdLaborR   = makeCellInput("laborRate",  { type: "number", inputmode: "decimal", step: "any" });
+        const tdUnitCost = makeCellInput("unitCost",   { type:"number", inputmode:"decimal", step:"any" });
+        const tdLaborH   = makeCellInput("laborHours", { type:"number", inputmode:"decimal", step:"any" });
+        const tdLaborR   = makeCellInput("laborRate",  { type:"number", inputmode:"decimal", step:"any" });
 
         const tdDel = document.createElement("td"); tdDel.className = "no-print";
         const delBtn = document.createElement("button"); delBtn.textContent = "✕"; delBtn.onclick = () => removeRow(it.id);
@@ -226,8 +221,8 @@
       updateTotalsUI();
     }
 
-    // ------- Tracker row (for Sheets logging) -------
-    function buildTrackerRow() {
+    // Tracker row (optional Sheets logging)
+    function buildTrackerRow(){
       const t = computeTotals();
       return [
         new Date().toISOString(),
@@ -242,8 +237,8 @@
       ];
     }
 
-    // ------- Build a BID object (FULL items) -------
-    function buildBidFromForm() {
+    // Build bid (FULL items)
+    function buildBidFromForm(){
       const t = computeTotals();
       return {
         company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
@@ -261,18 +256,13 @@
       };
     }
 
-    function BID_ITEMS_HEADERS() {
-  return ["BID_ID","Line #","Name","Qty","Unit","Unit Cost","Labor Hours","Labor Rate"];
-}
-
-    // ------- Post helper (HTTPS JSON; local fallbacks) -------
+    // POST helper (reads JSON when hosted over http/https)
     async function postJson(payload){
-      // Prefer full JSON when hosted (https)
       if (location.protocol.startsWith("http")) {
         const res = await fetch(WEB_APP_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
         return await res.json();
       }
-      // Local file fallbacks (no readable response)
+      // local fallback (no readable response)
       const body = JSON.stringify(payload);
       if (navigator.sendBeacon) {
         const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
@@ -283,91 +273,46 @@
       return { ok:true, _offline:true };
     }
 
-    // ------- Actions -------
-    async function sendToSheetsAction() {
-      const row = buildTrackerRow();
-      const { ok } = await postJson({ row }); // legacy row write supported by server
+    // Actions
+    async function sendToSheetsAction(){
+      const { ok } = await postJson({ row: buildTrackerRow() });
       alert(ok ? "Sent to Google Sheets." : "Failed to send.");
     }
 
-    async function createDocAction() {
+    async function createDocAction(){
       const t = computeTotals();
       const proposal = {
         company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
         client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
         project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
-        items: items.map(it => ({ name: it.name || "" })), // names only in Doc
+        items: items.map(it => ({ name: it.name || "" })), // names-only into Doc
         totals: { base: t.base, contingency: t.contingency, profit: t.profit, subtotal: t.subtotal, tax: t.tax, total: t.total }
       };
-      const payload = { action: "create_proposal", proposal, trackerRow: buildTrackerRow() };
-      const res = await postJson(payload);
-      if (res && res.ok && res.docUrl) {
-        window.open(res.docUrl, "_blank");
-        alert("Google Doc created. Opening now.");
-      } else {
-        alert("Proposal request sent. If opened locally, check the Sheet for the Doc URL.");
-      }
+      const res = await postJson({ action:"create_proposal", proposal, trackerRow: buildTrackerRow() });
+      if (res && res.ok && res.docUrl) { window.open(res.docUrl, "_blank"); alert("Google Doc created. Opening now."); }
+      else { alert("Proposal request sent. If opened locally, check the Sheet for the Doc URL."); }
     }
 
     let CURRENT_BID_ID = null;
 
-    async function saveBid() {
-      const bid = buildBidFromForm();
-      const res = await postJson({ action: "save_bid", bid, createProposalDoc: true });
-      console.log("save_bid response:", res);
+    async function saveBid(){
+      const res = await postJson({ action:"save_bid", bid: buildBidFromForm(), createProposalDoc:true });
       if (!res || !res.ok) return alert("Save failed: " + (res && res.error ? res.error : "no response"));
       if (res.bidId) {
         CURRENT_BID_ID = res.bidId;
         try { await navigator.clipboard.writeText(res.bidId); } catch {}
         alert(`Saved.\nBID_ID = ${res.bidId}\n(The ID is copied to your clipboard.)`);
       } else {
-        alert("Saved.\nThis page may be local, so the BID_ID couldn’t be read.\nOpen the Google Sheet → Bids tab → newest row for the BID_ID.\n(Use the GitHub Pages URL to see the ID immediately.)");
+        alert("Saved.\nIf running locally, open the Google Sheet → Bids tab for the BID_ID.");
       }
     }
 
-    function ensureBidItemsHeaders_() {
-// Write line items (full details, backward-safe)
-const itemsSh = ensureBidItemsHeaders_();
-const NEWHDR = BID_ITEMS_HEADERS();
-
-const rows = (bid.items || []).map((it, idx) => {
-  const qty = Number(it?.qty || 0);
-  const unit = (it?.unit || "ea").trim();
-  const unitCost = Number(it?.unitCost || 0);
-  const laborHours = Number(it?.laborHours || 0);
-  const laborRate = Number(it?.laborRate || 65);
-  let name = (it?.name || "").trim();
-  if (!name && (qty || unitCost || laborHours || laborRate)) name = `Item ${idx+1}`;
-  return [ bidId, idx+1, name, qty, unit, unitCost, laborHours, laborRate ];
-}).filter(r => r[2] !== "" || r[3] || r[5] || r[6] || r[7]); // keep any meaningful row
-
-if (rows.length) {
-  itemsSh.getRange(itemsSh.getLastRow()+1, 1, rows.length, NEWHDR.length).setValues(rows);
-}
-
-  const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
-  // If missing any of the new columns, rewrite header row to the new schema
-  const needUpgrade = NEW.some(h => !headers.includes(h)) || headers.length < NEW.length;
-  if (needUpgrade) {
-    sh.getRange(1,1,1,NEW.length).setValues([NEW]); // keeps existing data rows; empty cells are fine
-  }
-  return sh;
-}
-    async function loadBid() {
-      const raw = $("loadBidId").value || "";
-      const bidId = raw.trim();
+    async function loadBid(){
+      const bidId = ( $("loadBidId").value || "" ).trim();
       if (!bidId) return alert("Enter a BID_ID first (e.g., BID-20250912-1234).");
-
-      const res = await postJson({ action: "get_bid", bidId });
-      console.log("get_bid response:", res);
-
-      if (!res || !res.ok) {
-        alert("Bid not found or server blocked the request." + (res && res.error ? "\n\nDetails: " + res.error : ""));
-        return;
-      }
-
-      const b = res.bid;
-      CURRENT_BID_ID = b.bidId || bidId;
+      const res = await postJson({ action:"get_bid", bidId });
+      if (!res || !res.ok) return alert("Bid not found or blocked." + (res && res.error ? "\n\nDetails: " + res.error : ""));
+      const b = res.bid; CURRENT_BID_ID = b.bidId || bidId;
 
       // Fill fields
       $("coName").value = b.company?.name || ""; $("coPhone").value = b.company?.phone || "";
@@ -378,7 +323,7 @@ if (rows.length) {
       $("projRef").value = b.project?.ref || ""; $("projValid").value = b.project?.validDays || 30;
       $("notes").value = b.project?.notes || ""; $("terms").value = b.project?.terms || "";
 
-      // Items (FULL details restored)
+      // Restore FULL items
       items = [];
       (b.items || []).forEach(it => items.push({
         id: Math.random().toString(36).slice(2),
@@ -394,29 +339,22 @@ if (rows.length) {
       alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
     }
 
-    async function approveBid() {
+    async function approveBid(){
       const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
       if (!bidId) return alert("Load a BID_ID first (or paste one).");
-      const res = await postJson({ action: "approve_bid", bidId });
+      const res = await postJson({ action:"approve_bid", bidId });
       if (res && res.ok) {
         alert(`Invoice created: ${res.invoiceNumber || "(see Invoices sheet)"}`);
         if (res.invoiceUrl) window.open(res.invoiceUrl, "_blank");
-      } else {
-        alert("Approval failed.");
-      }
+      } else { alert("Approval failed."); }
     }
 
     // Recent bids list
-    function bidsCurrency(n){ return (isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"}); }
-    async function refreshBids() {
-      const res = await postJson({ action: "list_bids" }); // all statuses
-      console.log("list_bids:", res);
+    async function refreshBids(){
+      const res = await postJson({ action:"list_bids" });
       const host = $("bidsList");
-      if (!res || !res.ok || !Array.isArray(res.rows) || res.rows.length === 0) {
-        host.textContent = "No bids found yet.";
-        return;
-      }
-      const rows = res.rows.slice(0, 20);
+      if (!res || !res.ok || !Array.isArray(res.rows) || res.rows.length === 0) { host.textContent = "No bids found yet."; return; }
+      const rows = res.rows.slice(0,20);
       const html = [
         '<table style="width:100%; border-collapse:collapse;">',
         '<thead><tr>',
@@ -427,13 +365,14 @@ if (rows.length) {
           '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Status</th>',
         '</tr></thead><tbody>'
       ];
+      const fmt = (n)=> (isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"});
       for (const r of rows) {
         html.push(
           `<tr class="bid-row" data-id="${r.bidId}" style="cursor:pointer;">` +
           `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.bidId}</td>` +
           `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.client || ""}</td>` +
           `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.project || ""}</td>` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6; text-align:right;">${bidsCurrency(r.total||0)}</td>` +
+          `<td style="padding:6px; border-bottom:1px solid #f3f4f6; text-align:right;">${fmt(r.total||0)}</td>` +
           `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.status || ""}</td>` +
           `</tr>`
         );
@@ -448,9 +387,9 @@ if (rows.length) {
       });
     }
 
-    function printNow() { window.print(); }
+    function printNow(){ window.print(); }
 
-    // ------- Init -------
+    // Wire up
     $("addLineBtn").onclick = () => addRow();
     $("clearBtn").onclick = () => { items = []; addRow(); };
     $("sendToSheetsBtn").onclick = sendToSheetsAction;
@@ -459,10 +398,12 @@ if (rows.length) {
     $("loadBidBtn").onclick = loadBid;
     $("approveBidBtn").onclick = approveBid;
     $("refreshBidsBtn").onclick = refreshBids;
-    ["profitPct", "taxPct", "contingencyPct"].forEach((id) => {
+    ["profitPct","taxPct","contingencyPct"].forEach(id => {
       $(id).addEventListener("input", updateTotalsUI);
       $(id).addEventListener("change", updateTotalsUI);
     });
+
+    // Init
     addRow();
     refreshBids();
   </script>
