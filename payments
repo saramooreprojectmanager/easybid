@@ -1,0 +1,102 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>EasyBid — Payments</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 720px; }
+  input, button, select { font: inherit; padding: 8px 10px; }
+  input, select { border: 1px solid #ccc; border-radius: 6px; width: 100%; box-sizing: border-box; }
+  label { display:block; margin: 12px 0; }
+  .row { display:grid; gap:12px; grid-template-columns: 1fr 1fr; }
+  .card { border:1px solid #e5e7eb; border-radius:10px; padding:16px; background:#fafafa; }
+  .muted { color:#666; font-size: 12px; }
+</style>
+
+<h1>Payments</h1>
+<div class="muted">Record payments by Invoice # and see the running balance.</div>
+
+<div class="card">
+  <label>Invoice # <input id="invoiceNumber" placeholder="e.g., INV-20250912-1234" /></label>
+  <button id="refresh">Refresh Summary</button>
+  <div id="summary" style="margin-top:12px;"></div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <div class="row">
+    <label>Amount <input id="amount" type="number" step="0.01" placeholder="0.00" /></label>
+    <label>Method
+      <select id="method">
+        <option>Check</option>
+        <option>Cash</option>
+        <option>Card</option>
+        <option>ACH</option>
+        <option>Other</option>
+      </select>
+    </label>
+  </div>
+  <label>Date <input id="pdate" type="date" /></label>
+  <label>Note <input id="note" placeholder="(optional)" /></label>
+  <button id="record">Record Payment</button>
+  <div class="muted" id="msg" style="margin-top:8px;"></div>
+</div>
+
+<script>
+  // ===========================
+  // PASTE YOUR SAME WEB APP URL HERE (must end with /exec)
+  // ===========================
+  const WEB_APP_URL = "PASTE_YOUR_/exec_URL_HERE";
+
+  function currency(n){ return (isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"}); }
+
+  async function postJson(payload){
+    if (location.protocol.startsWith("http")) {
+      const res = await fetch(WEB_APP_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+      return await res.json();
+    }
+    // local fallback
+    const body = JSON.stringify(payload);
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
+      navigator.sendBeacon(WEB_APP_URL, blob);
+      return { ok:true };
+    }
+    await fetch(WEB_APP_URL, { method:"POST", mode:"no-cors", headers:{ "Content-Type":"text/plain;charset=UTF-8" }, body });
+    return { ok:true };
+  }
+
+  async function refreshSummary(){
+    const invoiceNumber = document.getElementById("invoiceNumber").value.trim();
+    if (!invoiceNumber) return;
+    const res = await postJson({ action:"get_invoice_summary", invoiceNumber });
+    if (res && res.ok) {
+      const s = res.summary || {};
+      document.getElementById("summary").innerHTML = `
+        <div>Total: <strong>${currency(s.total||0)}</strong></div>
+        <div>Paid: ${currency(s.paid||0)}</div>
+        <div>Balance: <strong>${currency(s.balance||0)}</strong></div>
+        <div>Status: ${s.status||"Open"}</div>
+      `;
+    } else {
+      document.getElementById("summary").textContent = "Unable to load summary.";
+    }
+  }
+
+  async function recordPayment(){
+    const invoiceNumber = document.getElementById("invoiceNumber").value.trim();
+    const amount = Number(document.getElementById("amount").value || 0);
+    const method = document.getElementById("method").value;
+    const note   = document.getElementById("note").value.trim();
+    const date   = document.getElementById("pdate").value;
+
+    if (!invoiceNumber || !amount) {
+      document.getElementById("msg").textContent = "Invoice # and Amount are required.";
+      return;
+    }
+    const res = await postJson({ action: "record_payment", payment: { invoiceNumber, amount, method, note, date } });
+    document.getElementById("msg").textContent = res && res.ok ? "Payment recorded." : "Failed to record payment.";
+    await refreshSummary();
+  }
+
+  document.getElementById("refresh").onclick = refreshSummary;
+  document.getElementById("record").onclick = recordPayment;
+</script>
