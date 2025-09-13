@@ -259,7 +259,56 @@
         totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
       };
     }
+function currency(n){ return (isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"}); }
 
+async function refreshBids() {
+  const res = await postJson({ action: "list_bids" }); // all statuses
+  console.log("list_bids:", res);
+  const host = $("bidsList");
+  if (!res || !res.ok || !Array.isArray(res.rows) || res.rows.length === 0) {
+    host.textContent = "No bids found yet.";
+    return;
+  }
+  // Render a tiny table
+  const rows = res.rows.slice(0, 20); // most recent first (server already reverses)
+  const html = [
+    '<table style="width:100%; border-collapse:collapse;">',
+    '<thead><tr>',
+      '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">BID_ID</th>',
+      '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Client</th>',
+      '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Project</th>',
+      '<th style="text-align:right; border-bottom:1px solid #eee; padding:6px;">Total</th>',
+      '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Status</th>',
+    '</tr></thead><tbody>'
+  ];
+  for (const r of rows) {
+    html.push(
+      `<tr class="bid-row" data-id="${r.bidId}" style="cursor:pointer;">` +
+      `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.bidId}</td>` +
+      `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.client || ""}</td>` +
+      `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.project || ""}</td>` +
+      `<td style="padding:6px; border-bottom:1px solid #f3f4f6; text-align:right;">${currency(r.total||0)}</td>` +
+      `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.status || ""}</td>` +
+      `</tr>`
+    );
+  }
+  html.push('</tbody></table>');
+  host.innerHTML = html.join("");
+
+  // Click to load
+  host.querySelectorAll(".bid-row").forEach(tr => {
+    tr.addEventListener("click", () => {
+      $("loadBidId").value = tr.getAttribute("data-id");
+      loadBid();
+    });
+  });
+}
+
+// wire the refresh button
+$("refreshBidsBtn").onclick = refreshBids;
+
+// refresh list on page load
+refreshBids();
     // ------- Post helper (HTTPS JSON; local fallbacks) -------
     async function postJson(payload){
       // Prefer full JSON when hosted (https)
