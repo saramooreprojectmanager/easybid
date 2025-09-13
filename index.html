@@ -261,6 +261,10 @@
       };
     }
 
+    function BID_ITEMS_HEADERS() {
+  return ["BID_ID","Line #","Name","Qty","Unit","Unit Cost","Labor Hours","Labor Rate"];
+}
+
     // ------- Post helper (HTTPS JSON; local fallbacks) -------
     async function postJson(payload){
       // Prefer full JSON when hosted (https)
@@ -321,6 +325,34 @@
       }
     }
 
+    function ensureBidItemsHeaders_() {
+// Write line items (full details, backward-safe)
+const itemsSh = ensureBidItemsHeaders_();
+const NEWHDR = BID_ITEMS_HEADERS();
+
+const rows = (bid.items || []).map((it, idx) => {
+  const qty = Number(it?.qty || 0);
+  const unit = (it?.unit || "ea").trim();
+  const unitCost = Number(it?.unitCost || 0);
+  const laborHours = Number(it?.laborHours || 0);
+  const laborRate = Number(it?.laborRate || 65);
+  let name = (it?.name || "").trim();
+  if (!name && (qty || unitCost || laborHours || laborRate)) name = `Item ${idx+1}`;
+  return [ bidId, idx+1, name, qty, unit, unitCost, laborHours, laborRate ];
+}).filter(r => r[2] !== "" || r[3] || r[5] || r[6] || r[7]); // keep any meaningful row
+
+if (rows.length) {
+  itemsSh.getRange(itemsSh.getLastRow()+1, 1, rows.length, NEWHDR.length).setValues(rows);
+}
+
+  const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  // If missing any of the new columns, rewrite header row to the new schema
+  const needUpgrade = NEW.some(h => !headers.includes(h)) || headers.length < NEW.length;
+  if (needUpgrade) {
+    sh.getRange(1,1,1,NEW.length).setValues([NEW]); // keeps existing data rows; empty cells are fine
+  }
+  return sh;
+}
     async function loadBid() {
       const raw = $("loadBidId").value || "";
       const bidId = raw.trim();
