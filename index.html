@@ -128,7 +128,7 @@
 
     // ------- Items State -------
     let items = [];
-    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }; }
+    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"70" }; }
     function addRow(it = defaultItem()){ items.push(it); render(); }
     function removeRow(id){ items = items.filter(x => x.id !== id); render(); }
 
