@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>EasyBid — Contractor Bid Tool</title>
+  <title>EasyBid — Simple Contractor Bid Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
@@ -20,16 +20,15 @@
     .right { text-align:right; white-space:nowrap; }
     .muted { color:#666; font-size: 12px; }
     .nowrap { white-space: nowrap; }
-    .status { background:#f6f8fa; border:1px solid #e5e7eb; padding:8px 12px; border-radius:8px; margin:12px 0; font-size:12px; color:#444;}
     @media print {.no-print { display:none !important; } body { margin: 0.5in; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
     label > span { font-size: 12px; color:#555; display:block; margin-bottom:4px; }
   </style>
 </head>
 <body>
-  <h1>EasyBid — Contractor Bid Tool</h1>
-  <div class="muted">Save bids (with full line items), recall by BID_ID, approve → invoice, and create proposal Docs.</div>
+  <h1>EasyBid — Simple Contractor Bid Tool</h1>
+  <div class="muted">Enter items, auto-calc totals. Send to Google Sheets or create a Google Doc proposal.</div>
 
-  <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
+  <div id="urlStatus" class="muted no-print" style="margin:8px 0 16px;">Web App URL: <em>(not set)</em></div>
 
   <h2>Company</h2>
   <div class="grid-2">
@@ -85,8 +84,8 @@
 
   <h2>Markup</h2>
   <div class="grid-4" style="max-width:900px">
-    <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="20" /></label>
-    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.625" /></label>
+    <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="12" /></label>
+    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="0" /></label>
     <label><span>Tax $ (auto)</span><input id="taxDollars" disabled /></label>
     <label><span>Contingency %</span><input id="contingencyPct" type="number" inputmode="decimal" value="5" /></label>
   </div>
@@ -109,49 +108,31 @@
     <div><strong>Total: <span id="grandTotal" class="right"></span></strong></div>
   </div>
 
-  <h2 class="no-print">Workflow</h2>
-  <div class="actions no-print">
-    <button id="saveBidBtn">Save Bid (get BID_ID)</button>
-    <input id="loadBidId" placeholder="Enter BID_ID e.g., BID-20250912-1234" style="min-width:320px"/>
-    <button id="loadBidBtn">Load Bid</button>
-    <button id="approveBidBtn">Approve → Create Invoice</button>
-  </div>
-
   <div class="actions no-print" style="margin-top:12px;">
     <button id="sendToSheetsBtn">Send to Google Sheets</button>
     <button id="createDocBtn">Create Google Doc Proposal</button>
     <button id="printBtn">Print / Save PDF</button>
   </div>
 
-  <!-- Recent Bids -->
-  <div class="no-print" style="margin-top:16px; border:1px solid #eee; border-radius:8px; padding:12px;">
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-      <strong>Recent Bids</strong>
-      <button id="refreshBidsBtn">Refresh</button>
-      <span class="muted">Click a row to load it</span>
-    </div>
-    <div id="bidsList" class="muted">No data yet.</div>
-  </div>
-
   <script>
     // ===========================
-    // 1) PASTE YOUR WEB APP URL (must end with /exec)
+    // 1) PASTE YOUR WEB APP URL HERE (must end with /exec)
     // ===========================
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyalZx18KS5u7GjRYv5oc52p595U906dh7QnwzkZLfB305JqrqOO1OhnelONQSW4UqW/exec";
-    (function(){ document.getElementById("urlStatus").innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>"; })();
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwwLuWQPbFxE9kIf6LajelehlzxLjGamFCBu8nC-LxDdchyXu-1ivvwkgwcr21rSb9O/exec";
+    (function(){ document.getElementById("urlStatus").innerHTML = "Web App URL: <code>"+(WEB_APP_URL||"(not set)")+"</code>"; })();
 
-    // Utils
+    // ------- Utilities -------
     const $ = (id) => document.getElementById(id);
     const currency = (n) => (isFinite(n) ? n : 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const num = (v) => (v === "" || v == null ? 0 : Number(v));
 
-    // Items state
+    // ------- Items State -------
     let items = [];
-    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"70" }; }
+    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"65" }; }
     function addRow(it = defaultItem()){ items.push(it); render(); }
     function removeRow(id){ items = items.filter(x => x.id !== id); render(); }
 
-    // Totals
+    // ------- Calculations -------
     function computeTotals(){
       const material = items.reduce((s,it)=> s + num(it.qty)*num(it.unitCost), 0);
       const labor    = items.reduce((s,it)=> s + num(it.laborHours)*num(it.laborRate), 0);
@@ -178,7 +159,7 @@
       $("grandTotal").textContent = currency(t.total);
     }
 
-    // Render table
+    // ------- Render table -------
     function render(){
       const tbody = $("itemsBody"); tbody.innerHTML = "";
       items.forEach((it) => {
@@ -221,7 +202,7 @@
       updateTotalsUI();
     }
 
-    // Tracker row (optional Sheets logging)
+    // ------- Tracker row for Sheets -------
     function buildTrackerRow(){
       const t = computeTotals();
       return [
@@ -237,154 +218,51 @@
       ];
     }
 
-    // Build bid (FULL items)
-    function buildBidFromForm(){
+    // ------- Build proposal payload (names only to Doc) -------
+    function buildProposal(){
       const t = computeTotals();
       return {
         company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
         client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
         project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
-        items: items.map(it => ({
-          name: it.name || "",
-          qty: Number(it.qty || 0),
-          unit: it.unit || "ea",
-          unitCost: Number(it.unitCost || 0),
-          laborHours: Number(it.laborHours || 0),
-          laborRate: Number(it.laborRate || 65),
-        })),
-        totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
-      };
-    }
-
-    // POST helper (reads JSON when hosted over http/https)
-    async function postJson(payload){
-      if (location.protocol.startsWith("http")) {
-        const res = await fetch(WEB_APP_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
-        return await res.json();
-      }
-      // local fallback (no readable response)
-      const body = JSON.stringify(payload);
-      if (navigator.sendBeacon) {
-        const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
-        navigator.sendBeacon(WEB_APP_URL, blob);
-        return { ok:true, _offline:true };
-      }
-      await fetch(WEB_APP_URL, { method:"POST", mode:"no-cors", headers:{ "Content-Type":"text/plain;charset=UTF-8" }, body });
-      return { ok:true, _offline:true };
-    }
-
-    // Actions
-    async function sendToSheetsAction(){
-      const { ok } = await postJson({ row: buildTrackerRow() });
-      alert(ok ? "Sent to Google Sheets." : "Failed to send.");
-    }
-
-    async function createDocAction(){
-      const t = computeTotals();
-      const proposal = {
-        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value },
-        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
-        project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
-        items: items.map(it => ({ name: it.name || "" })), // names-only into Doc
+        items: items.map(it => ({ name: it.name || "" })), // names-only for client doc
         totals: { base: t.base, contingency: t.contingency, profit: t.profit, subtotal: t.subtotal, tax: t.tax, total: t.total }
       };
-      const res = await postJson({ action:"create_proposal", proposal, trackerRow: buildTrackerRow() });
-      if (res && res.ok && res.docUrl) { window.open(res.docUrl, "_blank"); alert("Google Doc created. Opening now."); }
-      else { alert("Proposal request sent. If opened locally, check the Sheet for the Doc URL."); }
     }
 
-    let CURRENT_BID_ID = null;
+    // ------- Post without CORS preflight -------
+    async function postJson(payload){
+      const body = JSON.stringify(payload);
+      try {
+        // No headers -> stays a "simple" request (no OPTIONS preflight in Safari)
+        const res = await fetch(WEB_APP_URL, { method:"POST", body });
+        const text = await res.text();
+        try { return JSON.parse(text); } catch { return { ok:true, _opaque:true }; }
+      } catch (e) {
+        // Fallbacks still submit the data even if we can't read back
+        if (navigator.sendBeacon) {
+          const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
+          if (navigator.sendBeacon(WEB_APP_URL, blob)) return { ok:true, _beacon:true };
+        }
+        try { await fetch(WEB_APP_URL, { method:"POST", mode:"no-cors", body }); return { ok:true, _nocors:true }; }
+        catch (e2) { return { ok:false, error:String(e2) }; }
+      }
+    }
 
-    async function saveBid(){
-      const res = await postJson({ action:"save_bid", bid: buildBidFromForm(), createProposalDoc:true });
-      if (!res || !res.ok) return alert("Save failed: " + (res && res.error ? res.error : "no response"));
-      if (res.bidId) {
-        CURRENT_BID_ID = res.bidId;
-        try { await navigator.clipboard.writeText(res.bidId); } catch {}
-        alert(`Saved.\nBID_ID = ${res.bidId}\n(The ID is copied to your clipboard.)`);
+    // ------- Actions -------
+    async function sendToSheets(){
+      const res = await postJson({ row: buildTrackerRow() });
+      alert(res && res.ok ? "Sent to Google Sheets." : "Failed to send.");
+    }
+
+    async function createDoc(){
+      const res = await postJson({ action:"create_proposal", proposal: buildProposal(), trackerRow: buildTrackerRow() });
+      if (res && res.ok && res.docUrl) {
+        window.open(res.docUrl, "_blank");
+        alert("Google Doc created. Opening now.");
       } else {
-        alert("Saved.\nIf running locally, open the Google Sheet → Bids tab for the BID_ID.");
+        alert("Proposal request sent. If you opened this file locally, check the Sheet for the Doc URL.");
       }
-    }
-
-    async function loadBid(){
-      const bidId = ( $("loadBidId").value || "" ).trim();
-      if (!bidId) return alert("Enter a BID_ID first (e.g., BID-20250912-1234).");
-      const res = await postJson({ action:"get_bid", bidId });
-      if (!res || !res.ok) return alert("Bid not found or blocked." + (res && res.error ? "\n\nDetails: " + res.error : ""));
-      const b = res.bid; CURRENT_BID_ID = b.bidId || bidId;
-
-      // Fill fields
-      $("coName").value = b.company?.name || ""; $("coPhone").value = b.company?.phone || "";
-      $("coEmail").value = b.company?.email || ""; $("coAddress").value = b.company?.address || "";
-      $("clientName").value = b.client?.name || ""; $("clientEmail").value = b.client?.email || "";
-      $("clientPhone").value = b.client?.phone || ""; $("clientAddress").value = b.client?.address || "";
-      $("projTitle").value = b.project?.title || ""; $("projSite").value = b.project?.site || "";
-      $("projRef").value = b.project?.ref || ""; $("projValid").value = b.project?.validDays || 30;
-      $("notes").value = b.project?.notes || ""; $("terms").value = b.project?.terms || "";
-
-      // Restore FULL items
-      items = [];
-      (b.items || []).forEach(it => items.push({
-        id: Math.random().toString(36).slice(2),
-        name: it.name || "",
-        qty: it.qty ?? "",
-        unit: it.unit || "ea",
-        unitCost: it.unitCost ?? "",
-        laborHours: it.laborHours ?? "",
-        laborRate: (it.laborRate ?? 65),
-      }));
-      if (items.length === 0) items.push(defaultItem());
-      render();
-      alert(`Loaded ${CURRENT_BID_ID} (status: ${b.status}).`);
-    }
-
-    async function approveBid(){
-      const bidId = CURRENT_BID_ID || $("loadBidId").value.trim();
-      if (!bidId) return alert("Load a BID_ID first (or paste one).");
-      const res = await postJson({ action:"approve_bid", bidId });
-      if (res && res.ok) {
-        alert(`Invoice created: ${res.invoiceNumber || "(see Invoices sheet)"}`);
-        if (res.invoiceUrl) window.open(res.invoiceUrl, "_blank");
-      } else { alert("Approval failed."); }
-    }
-
-    // Recent bids list
-    async function refreshBids(){
-      const res = await postJson({ action:"list_bids" });
-      const host = $("bidsList");
-      if (!res || !res.ok || !Array.isArray(res.rows) || res.rows.length === 0) { host.textContent = "No bids found yet."; return; }
-      const rows = res.rows.slice(0,20);
-      const html = [
-        '<table style="width:100%; border-collapse:collapse;">',
-        '<thead><tr>',
-          '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">BID_ID</th>',
-          '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Client</th>',
-          '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Project</th>',
-          '<th style="text-align:right; border-bottom:1px solid #eee; padding:6px;">Total</th>',
-          '<th style="text-align:left; border-bottom:1px solid #eee; padding:6px;">Status</th>',
-        '</tr></thead><tbody>'
-      ];
-      const fmt = (n)=> (isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"});
-      for (const r of rows) {
-        html.push(
-          `<tr class="bid-row" data-id="${r.bidId}" style="cursor:pointer;">` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.bidId}</td>` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.client || ""}</td>` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.project || ""}</td>` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6; text-align:right;">${fmt(r.total||0)}</td>` +
-          `<td style="padding:6px; border-bottom:1px solid #f3f4f6;">${r.status || ""}</td>` +
-          `</tr>`
-        );
-      }
-      html.push('</tbody></table>');
-      host.innerHTML = html.join("");
-      host.querySelectorAll(".bid-row").forEach(tr => {
-        tr.addEventListener("click", () => {
-          $("loadBidId").value = tr.getAttribute("data-id");
-          loadBid();
-        });
-      });
     }
 
     function printNow(){ window.print(); }
@@ -392,12 +270,9 @@
     // Wire up
     $("addLineBtn").onclick = () => addRow();
     $("clearBtn").onclick = () => { items = []; addRow(); };
-    $("sendToSheetsBtn").onclick = sendToSheetsAction;
-    $("createDocBtn").onclick = createDocAction;
-    $("saveBidBtn").onclick = saveBid;
-    $("loadBidBtn").onclick = loadBid;
-    $("approveBidBtn").onclick = approveBid;
-    $("refreshBidsBtn").onclick = refreshBids;
+    $("sendToSheetsBtn").onclick = sendToSheets;
+    $("createDocBtn").onclick = createDoc;
+    $("printBtn").onclick = printNow;
     ["profitPct","taxPct","contingencyPct"].forEach(id => {
       $(id).addEventListener("input", updateTotalsUI);
       $(id).addEventListener("change", updateTotalsUI);
@@ -405,7 +280,6 @@
 
     // Init
     addRow();
-    refreshBids();
   </script>
 </body>
 </html>
