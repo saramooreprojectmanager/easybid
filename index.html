@@ -27,7 +27,7 @@
 </head>
 <body>
   <h1>EasyBid — Contractor Bid Tool</h1>
-  <div class="muted">Add your items, set markup, and send a tracker row directly to Google Sheets.</div>
+  <div class="muted">Add your items, set markup, and send a tracker row to Google Sheets or create a Google Doc proposal.</div>
 
   <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
 
@@ -112,6 +112,7 @@
 
   <div class="actions no-print" style="margin-top:16px;">
     <button id="sendToSheetsBtn">Send to Google Sheets</button>
+    <button id="createDocBtn">Create Google Doc Proposal</button>
     <button id="printBtn">Print / Save PDF</button>
   </div>
 
@@ -119,35 +120,29 @@
     // ===========================
     // 1) PASTE YOUR WEB APP URL HERE (MUST END WITH /exec)
     // ===========================
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyLRdcXPrZIn8doUmde1LJubRBqHYngo89CZU6Xp5j33aZTKQ5C1pLm6DmRZC6Pz9GQ/exec";  // <— replace this string with your /exec URL
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyLRdcXPrZIn8doUmde1LJubRBqHYngo89CZU6Xp5j33aZTKQ5C1pLm6DmRZC6Pz9GQ/exec";
 
-    // Show & log the URL we are actually using:
     (function showCurrentUrl(){
       const el = document.getElementById("urlStatus");
       el.innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>";
       console.log("WEB_APP_URL =", WEB_APP_URL);
     })();
 
-    // Validate Google Apps Script URL
+    // Helpers
     function isValidAppsScriptUrl(u){
-      return typeof u === "string" &&
-             /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u.trim());
+      return typeof u === "string" && /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(u.trim());
     }
-
-    // ------- Utilities -------
     const $ = (id) => document.getElementById(id);
     const currency = (n) => (isFinite(n) ? n : 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const num = (v) => (v === "" || v == null ? 0 : Number(v));
 
-    // ------- Items State -------
+    // Items state
     let items = [];
-    function defaultItem() {
-      return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "70" };
-    }
+    function defaultItem() { return { id: Math.random().toString(36).slice(2), name: "", qty: "", unit: "ea", unitCost: "", laborHours: "", laborRate: "70" }; }
     function addRow(it = defaultItem()) { items.push(it); render(); }
     function removeRow(id) { items = items.filter((x) => x.id !== id); render(); }
 
-    // ------- Calculations -------
+    // Totals
     function computeTotals() {
       const material = items.reduce((s, it) => s + num(it.qty) * num(it.unitCost), 0);
       const labor    = items.reduce((s, it) => s + num(it.laborHours) * num(it.laborRate), 0);
@@ -159,11 +154,11 @@
 
       const contingency = (contingencyPct / 100) * base;
       const profit      = (profitPct / 100) * (base + contingency);
-      const taxable     = base + contingency + profit;
-      const tax         = (taxPct / 100) * taxable;
-      const total       = taxable + tax;
+      const subtotal    = base + contingency + profit;
+      const tax         = (taxPct / 100) * subtotal;
+      const total       = subtotal + tax;
 
-      return { material, labor, base, contingency, profit, tax, total };
+      return { material, labor, base, contingency, profit, subtotal, tax, total };
     }
     function updateTotalsUI() {
       const t = computeTotals();
@@ -177,7 +172,7 @@
       $("grandTotal").textContent  = currency(t.total);
     }
 
-    // ------- Render -------
+    // Render
     function render() {
       const tbody = $("itemsBody");
       tbody.innerHTML = "";
@@ -223,7 +218,7 @@
       updateTotalsUI();
     }
 
-    // ------- Build tracker row -------
+    // Build tracker row (for Sheets)
     function buildTrackerRow() {
       const t = computeTotals();
       return [
@@ -247,7 +242,19 @@
       ];
     }
 
-    // ------- Send to Google Sheets -------
+    // Build proposal payload (names-only list)
+    function buildProposal() {
+      const t = computeTotals();
+      return {
+        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value, license: $("coLicense").value },
+        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+        project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
+        items: items.map(it => ({ name: it.name || "" })), // list names only in Doc
+        totals: { subtotal: t.base + t.contingency + t.profit, tax: t.tax, total: t.total }
+      };
+    }
+
+    // Send to Google Sheets (legacy simple endpoint)
     function sendToGoogleSheet(row) {
       if (!isValidAppsScriptUrl(WEB_APP_URL)) {
         alert("Your Web App URL doesn’t look right. Make sure it ends with /exec, then save and hard-reload.");
@@ -256,7 +263,7 @@
       }
       const payload = JSON.stringify({ row });
 
-      // Prefer sendBeacon (works well from file://)
+      // Prefer sendBeacon (good from file:// or strict Safari)
       try {
         if (navigator.sendBeacon) {
           const blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
@@ -266,20 +273,44 @@
         }
       } catch (e) { console.warn("sendBeacon failed:", e); }
 
-      // Fallback: text/plain (simple request) + no-cors
+      // Fallback: text/plain simple POST (no headers → no preflight)
       try {
-        fetch(WEB_APP_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=UTF-8" },
-          body: payload
-        });
+        fetch(WEB_APP_URL, { method: "POST", mode: "no-cors", body: payload });
+      } catch (e) { console.error("fetch failed:", e); }
+    }
+
+    // Create Google Doc Proposal (posts JSON body with NO headers to avoid preflight)
+    async function createDocAction() {
+      if (!isValidAppsScriptUrl(WEB_APP_URL)) {
+        alert("Your Web App URL doesn’t look right. Make sure it ends with /exec, then save and hard-reload.");
+        return;
+      }
+      const payload = JSON.stringify({ action: "create_proposal", proposal: buildProposal(), trackerRow: buildTrackerRow() });
+
+      try {
+        const res = await fetch(WEB_APP_URL, { method: "POST", body: payload });
+        const text = await res.text();
+        // Try to parse JSON; if opaque/non-JSON, we still likely created the Doc
+        try {
+          const json = JSON.parse(text);
+          console.log("create_proposal response:", json);
+          if (json.ok && json.docUrl) {
+            window.open(json.docUrl, "_blank");
+            alert("Google Doc created. Opening now.");
+          } else {
+            alert("Create Doc failed: " + (json.error || "no response body"));
+          }
+        } catch {
+          console.warn("Non-JSON response (Doc may still be created). Raw:", text);
+          alert("Proposal requested. If nothing opened, check your Google Drive (or the tracker row) for a new Doc named 'Bid — <Project> — <Client>'.");
+        }
       } catch (e) {
-        console.error("fetch failed:", e);
+        console.error("createDocAction error:", e);
+        alert("Could not reach Apps Script. Check the /exec URL and deployment access (Anyone).");
       }
     }
 
-    // ------- Actions -------
+    // UI Actions
     function sendToSheetsAction() {
       const row = buildTrackerRow();
       sendToGoogleSheet(row);
@@ -287,11 +318,12 @@
     }
     function printNow() { window.print(); }
 
-    // ------- Init -------
-    $("addLineBtn").onclick = () => addRow();
-    $("clearBtn").onclick = () => { items = []; addRow(); };
-    $("sendToSheetsBtn").onclick = sendToSheetsAction;
-    $("printBtn").onclick = printNow;
+    // Init
+    document.getElementById("addLineBtn").onclick = () => addRow();
+    document.getElementById("clearBtn").onclick = () => { items = []; addRow(); };
+    document.getElementById("sendToSheetsBtn").onclick = sendToSheetsAction;
+    document.getElementById("createDocBtn").onclick = createDocAction;
+    document.getElementById("printBtn").onclick = printNow;
     ["profitPct", "taxPct", "contingencyPct"].forEach((id) => {
       $(id).addEventListener("input", updateTotalsUI);
       $(id).addEventListener("change", updateTotalsUI);
