@@ -85,7 +85,7 @@
   <h2>Markup</h2>
   <div class="grid-4" style="max-width:900px">
     <label><span>Profit %</span><input id="profitPct" type="number" inputmode="decimal" value="20" /></label>
-    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.625" /></label>
+    <label><span>Tax %</span><input id="taxPct" type="number" inputmode="decimal" value="7.645" /></label>
     <label><span>Tax $ (auto)</span><input id="taxDollars" disabled /></label>
     <label><span>Contingency %</span><input id="contingencyPct" type="number" inputmode="decimal" value="5" /></label>
   </div>
@@ -115,24 +115,22 @@
   </div>
 
   <script>
-    // ===========================
-    // 1) PASTE YOUR WEB APP URL HERE (must end with /exec)
-    // ===========================
+    // 1) PASTE YOUR WEB APP URL (must end with /exec)
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwwLuWQPbFxE9kIf6LajelehlzxLjGamFCBu8nC-LxDdchyXu-1ivvwkgwcr21rSb9O/exec";
     (function(){ document.getElementById("urlStatus").innerHTML = "Web App URL: <code>"+(WEB_APP_URL||"(not set)")+"</code>"; })();
 
-    // ------- Utilities -------
+    // Utilities
     const $ = (id) => document.getElementById(id);
     const currency = (n) => (isFinite(n) ? n : 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const num = (v) => (v === "" || v == null ? 0 : Number(v));
 
-    // ------- Items State -------
+    // Items state
     let items = [];
     function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"70" }; }
     function addRow(it = defaultItem()){ items.push(it); render(); }
     function removeRow(id){ items = items.filter(x => x.id !== id); render(); }
 
-    // ------- Calculations -------
+    // Totals
     function computeTotals(){
       const material = items.reduce((s,it)=> s + num(it.qty)*num(it.unitCost), 0);
       const labor    = items.reduce((s,it)=> s + num(it.laborHours)*num(it.laborRate), 0);
@@ -159,7 +157,7 @@
       $("grandTotal").textContent = currency(t.total);
     }
 
-    // ------- Render table -------
+    // Render table
     function render(){
       const tbody = $("itemsBody"); tbody.innerHTML = "";
       items.forEach((it) => {
@@ -202,7 +200,7 @@
       updateTotalsUI();
     }
 
-    // ------- Tracker row for Sheets -------
+    // Build tracker row for Sheets
     function buildTrackerRow(){
       const t = computeTotals();
       return [
@@ -218,7 +216,7 @@
       ];
     }
 
-    // ------- Build proposal payload (names only to Doc) -------
+    // Build proposal (names only)
     function buildProposal(){
       const t = computeTotals();
       return {
@@ -230,16 +228,14 @@
       };
     }
 
-    // ------- Post without CORS preflight -------
+    // Post without preflight (Safari-friendly)
     async function postJson(payload){
       const body = JSON.stringify(payload);
       try {
-        // No headers -> stays a "simple" request (no OPTIONS preflight in Safari)
         const res = await fetch(WEB_APP_URL, { method:"POST", body });
         const text = await res.text();
         try { return JSON.parse(text); } catch { return { ok:true, _opaque:true }; }
       } catch (e) {
-        // Fallbacks still submit the data even if we can't read back
         if (navigator.sendBeacon) {
           const blob = new Blob([body], { type:"text/plain;charset=UTF-8" });
           if (navigator.sendBeacon(WEB_APP_URL, blob)) return { ok:true, _beacon:true };
@@ -249,7 +245,7 @@
       }
     }
 
-    // ------- Actions -------
+    // Actions
     async function sendToSheets(){
       const res = await postJson({ row: buildTrackerRow() });
       alert(res && res.ok ? "Sent to Google Sheets." : "Failed to send.");
@@ -268,11 +264,11 @@
     function printNow(){ window.print(); }
 
     // Wire up
-    $("addLineBtn").onclick = () => addRow();
-    $("clearBtn").onclick = () => { items = []; addRow(); };
-    $("sendToSheetsBtn").onclick = sendToSheets;
-    $("createDocBtn").onclick = createDoc;
-    $("printBtn").onclick = printNow;
+    document.getElementById("addLineBtn").onclick = () => addRow();
+    document.getElementById("clearBtn").onclick = () => { items = []; addRow(); };
+    document.getElementById("sendToSheetsBtn").onclick = sendToSheets;
+    document.getElementById("createDocBtn").onclick = createDoc;
+    document.getElementById("printBtn").onclick = printNow;
     ["profitPct","taxPct","contingencyPct"].forEach(id => {
       $(id).addEventListener("input", updateTotalsUI);
       $(id).addEventListener("change", updateTotalsUI);
