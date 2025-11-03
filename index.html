@@ -42,16 +42,12 @@
       transition: opacity 0.4s, bottom 0.4s;
       font-size: 14px;
     }
-    .toast.show {
-      visibility: visible;
-      opacity: 1;
-      bottom: 60px;
-    }
+    .toast.show { visibility: visible; opacity: 1; bottom: 60px; }
   </style>
 </head>
 <body>
   <h1>EasyBid — Contractor Bid Tool</h1>
-  <div class="muted">Add your items, set markup, send to Google Sheets, and generate a Google Doc proposal. You can also save/load a draft locally.</div>
+  <div class="muted">Add items, set markup, send to Google Sheets, and generate a Google Doc proposal. You can also save/load a draft locally.</div>
 
   <div id="urlStatus" class="status no-print">Web App URL: <em>(not set)</em></div>
 
@@ -146,8 +142,10 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxGoKZj6FSdeonBad9o1VOCLTxH_eKKaWoxSSVj38WGLMZn-yTybIqWqNxIlpCPUeo9/exec";
+    // ====== CONFIG ======
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxGoKZj6FSdeonBad9o1VOCLTxH_eKKaWoxSSVj38WGLMZn-yTybIqWqNxIlpCPUeo9/exec"; // <-- replace with your Apps Script /exec URL
 
+    // ====== TOAST ======
     function showToast(msg, timeout = 2000) {
       const toast = document.getElementById("toast");
       toast.textContent = msg;
@@ -155,78 +153,227 @@
       setTimeout(() => { toast.className = toast.className.replace("show", ""); }, timeout);
     }
 
+    // ====== STATUS BANNER ======
     (function showCurrentUrl(){
       const el = document.getElementById("urlStatus");
       el.innerHTML = "Web App URL: <code>" + (WEB_APP_URL || "(not set)") + "</code>";
       console.log("WEB_APP_URL =", WEB_APP_URL);
     })();
 
-    function isValidAppsScriptUrl(u){ return typeof u==="string" && /^https:\\/\\/script\\.google\\.com\\/macros\\/s\\/[^\\/]+\\/exec$/.test(u.trim()); }
+    // ====== HELPERS ======
+    function isValidAppsScriptUrl(u){ return typeof u==="string" && /^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec$/.test(u.trim()); }
     const $ = (id)=>document.getElementById(id);
     const currency=(n)=>(isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"});
     const num=(v)=>(v===""||v==null?0:Number(v));
 
-    let items=[];
-    function defaultItem(){return{id:Math.random().toString(36).slice(2),name:\"\",qty:\"\",unit:\"ea\",unitCost:\"\",laborHours:\"\",laborRate:\"70\"};}
-    function addRow(it=defaultItem()){items.push(it);render();}
-    function removeRow(id){items=items.filter(x=>x.id!==id);render();}
-
-    function computeTotals(){
-      const material=items.reduce((s,it)=>s+num(it.qty)*num(it.unitCost),0);
-      const labor=items.reduce((s,it)=>s+num(it.laborHours)*num(it.laborRate),0);
-      const base=material+labor;
-      const cPct=num($(\"contingencyPct\").value),pPct=num($(\"profitPct\").value),tPct=num($(\"taxPct\").value);
-      const cont=(cPct/100)*base,prof=(pPct/100)*(base+cont),sub=base+cont+prof,tax=(tPct/100)*sub,total=sub+tax;
-      return{material,labor,base,contingency:cont,profit:prof,subtotal:sub,tax,total};
-    }
-    function updateTotalsUI(){
-      const t=computeTotals();
-      $(\"matTotal\").textContent=currency(t.material);
-      $(\"labTotal\").textContent=currency(t.labor);
-      $(\"baseTotal\").textContent=currency(t.base);
-      $(\"contTotal\").textContent=currency(t.contingency);
-      $(\"profitTotal\").textContent=currency(t.profit);
-      $(\"taxTotal\").textContent=currency(t.tax);
-      $(\"taxDollars\").value=currency(t.tax);
-      $(\"grandTotal\").textContent=currency(t.total);
-    }
+    // ====== LINE ITEMS ======
+    let items = [];
+    function defaultItem(){ return { id: Math.random().toString(36).slice(2), name:"", qty:"", unit:"ea", unitCost:"", laborHours:"", laborRate:"70" }; }
+    function addRow(it = defaultItem()){ items.push(it); render(); }
+    function removeRow(id){ items = items.filter(x => x.id !== id); render(); }
 
     function render(){
-      const tbody=$(\"itemsBody\");tbody.innerHTML=\"\";
-      items.forEach(it=>{
-        const tr=document.createElement(\"tr\");
-        const tdMat=document.createElement(\"td\");tdMat.className=\"right\";
-        const tdLab=document.createElement(\"td\");tdLab.className=\"right\";
-        const update=()=>{tdMat.textContent=currency(num(it.qty)*num(it.unitCost));tdLab.textContent=currency(num(it.laborHours)*num(it.laborRate));};
-        const cell=(prop,opts={})=>{const td=document.createElement(\"td\"),inp=document.createElement(\"input\");Object.assign(inp,opts);inp.value=it[prop]||\"\";inp.oninput=e=>{it[prop]=e.target.value;update();updateTotalsUI();};td.appendChild(inp);return td;};
-        const del=document.createElement(\"td\"),btn=document.createElement(\"button\");btn.textContent=\"✕\";btn.onclick=()=>removeRow(it.id);del.className=\"no-print\";del.appendChild(btn);
-        update();[cell(\"name\"),cell(\"qty\",{type:\"number\",step:\"any\"}),cell(\"unit\"),cell(\"unitCost\",{type:\"number\",step:\"any\"}),cell(\"laborHours\",{type:\"number\",step:\"any\"}),cell(\"laborRate\",{type:\"number\",step:\"any\"}),tdMat,tdLab,del].forEach(td=>tr.appendChild(td));tbody.appendChild(tr);
+      const tbody = $("itemsBody");
+      tbody.innerHTML = "";
+
+      items.forEach((it) => {
+        const tr = document.createElement("tr");
+
+        const tdMat = document.createElement("td"); tdMat.className = "right";
+        const tdLab = document.createElement("td"); tdLab.className = "right";
+        const updateRowComputed = () => {
+          tdMat.textContent = currency(num(it.qty) * num(it.unitCost));
+          tdLab.textContent = currency(num(it.laborHours) * num(it.laborRate));
+        };
+
+        const makeCellInput = (prop, opts = {}) => {
+          const td = document.createElement("td");
+          const input = document.createElement("input");
+          if (opts.type) input.type = opts.type;
+          if (opts.step) input.setAttribute("step", opts.step);
+          input.value = it[prop] ?? "";
+          input.oninput = (e) => { it[prop] = e.target.value; updateRowComputed(); updateTotalsUI(); };
+          td.appendChild(input);
+          return td;
+        };
+
+        const tdName     = makeCellInput("name");
+        const tdQty      = makeCellInput("qty",        { type:"number", step:"any" });
+        const tdUnit     = makeCellInput("unit");
+        const tdUnitCost = makeCellInput("unitCost",   { type:"number", step:"any" });
+        const tdLaborH   = makeCellInput("laborHours", { type:"number", step:"any" });
+        const tdLaborR   = makeCellInput("laborRate",  { type:"number", step:"any" });
+
+        const tdDel = document.createElement("td"); tdDel.className = "no-print";
+        const delBtn = document.createElement("button"); delBtn.textContent = "✕"; delBtn.onclick = () => removeRow(it.id);
+        tdDel.appendChild(delBtn);
+
+        updateRowComputed();
+        [tdName, tdQty, tdUnit, tdUnitCost, tdLaborH, tdLaborR, tdMat, tdLab, tdDel].forEach(td => tr.appendChild(td));
+        tbody.appendChild(tr);
       });
+
       updateTotalsUI();
     }
 
-    const DRAFT_KEY=\"easybid_draft_v3\";
-    function saveDraft(){localStorage.setItem(DRAFT_KEY,JSON.stringify({company:{name:$(\"coName\").value,phone:$(\"coPhone\").value,email:$(\"coEmail\").value,license:$(\"coLicense\").value,address:$(\"coAddress\").value},client:{name:$(\"clientName\").value,email:$(\"clientEmail\").value,phone:$(\"clientPhone\").value,address:$(\"clientAddress\").value},project:{title:$(\"projTitle\").value,ref:$(\"projRef\").value,site:$(\"projSite\").value,validDays:$(\"projValid\").value},notes:$(\"notes\").value,terms:$(\"terms\").value,items}));showToast(\"Draft saved ✅\");}
-    function loadDraft(){try{const d=JSON.parse(localStorage.getItem(DRAFT_KEY)||\"{}\");if(!d.items)return showToast(\"No saved draft ❌\");Object.assign($(\"coName\"),{value:d.company?.name||\"\"});Object.assign($(\"clientName\"),{value:d.client?.name||\"\"});Object.assign($(\"projTitle\"),{value:d.project?.title||\"\"});items=d.items||[];if(!items.length)items.push(defaultItem());render();showToast(\"Draft loaded ✅\");}catch{showToast(\"Could not load draft ❌\");}}
-    function newDraft(){items=[];addRow();$(\"notes\").value=\"\";$(\"terms\").value=\"Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.\";showToast(\"New draft ready\");}
+    // ====== TOTALS ======
+    function computeTotals(){
+      const material = items.reduce((s,it)=> s + num(it.qty)*num(it.unitCost), 0);
+      const labor    = items.reduce((s,it)=> s + num(it.laborHours)*num(it.laborRate), 0);
+      const base     = material + labor;
+      const cPct = num($("contingencyPct").value);
+      const pPct = num($("profitPct").value);
+      const tPct = num($("taxPct").value);
+      const contingency = (cPct/100) * base;
+      const profit      = (pPct/100) * (base + contingency);
+      const subtotal    = base + contingency + profit;
+      const tax         = (tPct/100) * subtotal;
+      const total       = subtotal + tax;
+      return { material, labor, base, contingency, profit, subtotal, tax, total };
+    }
 
-    function sendToGoogleSheet(row){if(!isValidAppsScriptUrl(WEB_APP_URL))return showToast(\"Bad /exec URL ❌\");const payload=JSON.stringify({row});try{if(navigator.sendBeacon){navigator.sendBeacon(WEB_APP_URL,new Blob([payload],{type:\"text/plain;charset=UTF-8\"}));}else{fetch(WEB_APP_URL,{method:\"POST\",mode:\"no-cors\",body:payload});}showToast(\"Sent to Sheets ✅\");}catch{showToast(\"Send failed ❌\");}}
+    function updateTotalsUI(){
+      const t = computeTotals();
+      $("matTotal").textContent    = currency(t.material);
+      $("labTotal").textContent    = currency(t.labor);
+      $("baseTotal").textContent   = currency(t.base);
+      $("contTotal").textContent   = currency(t.contingency);
+      $("profitTotal").textContent = currency(t.profit);
+      $("taxTotal").textContent    = currency(t.tax);
+      $("taxDollars").value        = currency(t.tax);
+      $("grandTotal").textContent  = currency(t.total);
+    }
 
-    async function createDocAction(){if(!isValidAppsScriptUrl(WEB_APP_URL))return showToast(\"Bad /exec URL ❌\");const payload=JSON.stringify({action:\"create_proposal\",proposal:buildProposal(),trackerRow:buildTrackerRow()});try{const r=await fetch(WEB_APP_URL,{method:\"POST\",body:payload});const t=await r.text();const j=JSON.parse(t||\"{}\");if(j.ok&&j.docUrl){window.open(j.docUrl,\"_blank\");showToast(\"Google Doc created ✅\");}else showToast(\"Doc creation failed ❌\");}catch{showToast(\"Could not reach Apps Script ❌\");}}
+    // ====== SHEETS & DOC ======
+    function buildTrackerRow(){
+      const t = computeTotals();
+      return [
+        new Date().toISOString(),
+        $("projTitle").value,
+        $("clientName").value,
+        $("clientEmail").value,
+        $("clientPhone").value,
+        $("projSite").value,
+        $("projRef").value,
+        $("projValid").value || 30,
+        t.material.toFixed(2),
+        t.labor.toFixed(2),
+        t.base.toFixed(2),
+        0, "0.00",
+        Number($("contingencyPct").value || 0), t.contingency.toFixed(2),
+        Number($("profitPct").value || 0), t.profit.toFixed(2),
+        Number($("taxPct").value || 0), t.tax.toFixed(2),
+        t.total.toFixed(2),
+        items.length
+      ];
+    }
 
-    function buildTrackerRow(){const t=computeTotals();return[new Date().toISOString(),$(\"projTitle\").value,$(\"clientName\").value,$(\"clientEmail\").value,$(\"clientPhone\").value,$(\"projSite\").value,$(\"projRef\").value,$(\"projValid\").value||30,t.material.toFixed(2),t.labor.toFixed(2),t.base.toFixed(2),0,\"0.00\",Number($(\"contingencyPct\").value||0),t.contingency.toFixed(2),Number($(\"profitPct\").value||0),t.profit.toFixed(2),Number($(\"taxPct\").value||0),t.tax.toFixed(2),t.total.toFixed(2),items.length];}
-    function buildProposal(){const t=computeTotals();return{company:{name:$(\"coName\").value,phone:$(\"coPhone\").value,email:$(\"coEmail\").value,address:$(\"coAddress\").value,license:$(\"coLicense\").value},client:{name:$(\"clientName\").value,email:$(\"clientEmail\").value,phone:$(\"clientPhone\").value,address:$(\"clientAddress\").value},project:{title:$(\"projTitle\").value,site:$(\"projSite\").value,ref:$(\"projRef\").value,validDays:$(\"projValid\").value||30,notes:$(\"notes\").value,terms:$(\"terms\").value},items:items.map(it=>({name:it.name||\"\"})),totals:{subtotal:t.subtotal,tax:t.tax,total:t.total}};}
+    function buildProposal(){
+      const t = computeTotals();
+      return {
+        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, address: $("coAddress").value, license: $("coLicense").value },
+        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+        project: { title: $("projTitle").value, site: $("projSite").value, ref: $("projRef").value, validDays: $("projValid").value || 30, notes: $("notes").value, terms: $("terms").value },
+        items: items.map(it => ({ name: it.name || "" })),
+        totals: { subtotal: t.subtotal, tax: t.tax, total: t.total }
+      };
+    }
 
-    $(\"addLineBtn\").onclick=()=>addRow();
-    $(\"clearBtn\").onclick=()=>{items=[];addRow();};
-    $(\"sendToSheetsBtn\").onclick=()=>{const row=buildTrackerRow();sendToGoogleSheet(row);};
-    $(\"createDocBtn\").onclick=createDocAction;
-    $(\"printBtn\").onclick=()=>window.print();
-    $(\"saveDraftBtn\").onclick=saveDraft;
-    $(\"loadDraftBtn\").onclick=loadDraft;
-    $(\"newDraftBtn\").onclick=newDraft;
-    [\"profitPct\",\"taxPct\",\"contingencyPct\"].forEach(id=>{$(id).addEventListener(\"input\",updateTotalsUI);$(id).addEventListener(\"change\",updateTotalsUI);});
-    addRow();
+    function sendToGoogleSheet(row){
+      if (!isValidAppsScriptUrl(WEB_APP_URL)) { showToast("Bad /exec URL ❌"); return; }
+      const payload = JSON.stringify({ row });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(WEB_APP_URL, new Blob([payload], { type: "text/plain;charset=UTF-8" }));
+        } else {
+          fetch(WEB_APP_URL, { method: "POST", mode: "no-cors", body: payload });
+        }
+        showToast("Sent to Sheets ✅");
+      } catch {
+        showToast("Send failed ❌");
+      }
+    }
+
+    async function createDocAction(){
+      if (!isValidAppsScriptUrl(WEB_APP_URL)) { showToast("Bad /exec URL ❌"); return; }
+      const payload = JSON.stringify({ action: "create_proposal", proposal: buildProposal(), trackerRow: buildTrackerRow() });
+      try {
+        const r = await fetch(WEB_APP_URL, { method: "POST", body: payload });
+        const t = await r.text();
+        const j = JSON.parse(t || "{}");
+        if (j.ok && j.docUrl) { window.open(j.docUrl, "_blank"); showToast("Google Doc created ✅"); }
+        else { showToast("Doc creation failed ❌"); }
+      } catch {
+        showToast("Could not reach Apps Script ❌");
+      }
+    }
+
+    // ====== SAVE/LOAD DRAFT ======
+    const DRAFT_KEY = "easybid_draft_v3";
+    function saveDraft(){
+      const draft = {
+        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, license: $("coLicense").value, address: $("coAddress").value },
+        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+        project: { title: $("projTitle").value, ref: $("projRef").value, site: $("projSite").value, validDays: $("projValid").value },
+        notes: $("notes").value,
+        terms: $("terms").value,
+        items
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      showToast("Draft saved ✅");
+    }
+
+    function loadDraft(){
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) { showToast("No saved draft ❌"); return; }
+        const d = JSON.parse(raw);
+        $("coName").value = d.company?.name || "";
+        $("coPhone").value = d.company?.phone || "";
+        $("coEmail").value = d.company?.email || "";
+        $("coLicense").value = d.company?.license || "";
+        $("coAddress").value = d.company?.address || "";
+        $("clientName").value = d.client?.name || "";
+        $("clientEmail").value = d.client?.email || "";
+        $("clientPhone").value = d.client?.phone || "";
+        $("clientAddress").value = d.client?.address || "";
+        $("projTitle").value = d.project?.title || "";
+        $("projRef").value = d.project?.ref || "";
+        $("projSite").value = d.project?.site || "";
+        $("projValid").value = d.project?.validDays || 30;
+        $("notes").value = d.notes || "";
+        $("terms").value = d.terms || "";
+        items = Array.isArray(d.items) ? d.items : [];
+        if (items.length === 0) items.push(defaultItem());
+        render();
+        showToast("Draft loaded ✅");
+      } catch(e){
+        console.error(e);
+        showToast("Could not load draft ❌");
+      }
+    }
+
+    function newDraft(){
+      items = [];
+      addRow();
+      $("notes").value = "";
+      $("terms").value = "Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.";
+      showToast("New draft ready");
+    }
+
+    // ====== WIRE UP UI ======
+    $("addLineBtn").onclick = () => addRow();
+    $("clearBtn").onclick = () => { items = []; addRow(); };
+    $("sendToSheetsBtn").onclick = () => { const row = buildTrackerRow(); sendToGoogleSheet(row); };
+    $("createDocBtn").onclick = createDocAction;
+    $("printBtn").onclick = () => window.print();
+    $("saveDraftBtn").onclick = saveDraft;
+    $("loadDraftBtn").onclick = loadDraft;
+    $("newDraftBtn").onclick = newDraft;
+    ["profitPct","taxPct","contingencyPct"].forEach(id => { $(id).addEventListener("input", updateTotalsUI); $(id).addEventListener("change", updateTotalsUI); });
+
+    // ====== INIT ======
+    addRow(); // ensure one starting line item row
   </script>
 </body>
 </html>
