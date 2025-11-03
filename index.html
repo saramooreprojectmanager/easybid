@@ -118,6 +118,19 @@
   <h2>Terms</h2>
   <textarea id="terms" rows="3">Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.</textarea>
 
+  <h2>Drafts</h2>
+  <div class="grid-2" style="max-width:760px">
+    <label><span>Draft name (for saving multiple versions)</span><input id="draftName" placeholder="e.g., Smith Kitchen v1" /></label>
+    <label><span>Saved drafts</span>
+      <select id="draftSelect"></select>
+    </label>
+  </div>
+  <div class="actions no-print">
+    <button id="saveAsBtn">Save As</button>
+    <button id="loadSelectedBtn">Load Selected</button>
+    <button id="deleteSelectedBtn">Delete Selected</button>
+  </div>
+
   <h2>Totals</h2>
   <div class="totals">
     <div>Materials: <span id="matTotal" class="right"></span></div>
@@ -139,11 +152,19 @@
     <button id="printBtn">Print / Save PDF</button>
   </div>
 
+    <button id="saveDraftBtn">Save Draft</button>
+    <button id="loadDraftBtn">Load Draft</button>
+    <button id="newDraftBtn">New / Clear</button>
+    <button id="sendToSheetsBtn">Send to Google Sheets</button>
+    <button id="createDocBtn">Create Google Doc Proposal</button>
+    <button id="printBtn">Print / Save PDF</button>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <script>
     // ====== CONFIG ======
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxGoKZj6FSdeonBad9o1VOCLTxH_eKKaWoxSSVj38WGLMZn-yTybIqWqNxIlpCPUeo9/execE"; // <-- replace with your Apps Script /exec URL
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxGoKZj6FSdeonBad9o1VOCLTxH_eKKaWoxSSVj38WGLMZn-yTybIqWqNxIlpCPUeo9/exec"; // <-- replace with your Apps Script /exec URL
 
     // ====== TOAST ======
     function showToast(msg, timeout = 2000) {
@@ -161,7 +182,12 @@
     })();
 
     // ====== HELPERS ======
-    function isValidAppsScriptUrl(u){ return typeof u==="string" && /^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec$/.test(u.trim()); }
+    function isValidAppsScriptUrl(u){
+      if (typeof u !== "string") return false;
+      const s = u.trim();
+      // Allow both /exec and /dev so testing URLs don't get blocked
+      return /^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/(exec|dev)(\?.*)?$/.test(s);
+    }
     const $ = (id)=>document.getElementById(id);
     const currency=(n)=>(isFinite(n)?n:0).toLocaleString(undefined,{style:"currency",currency:"USD"});
     const num=(v)=>(v===""||v==null?0:Number(v));
@@ -281,20 +307,49 @@
 
     function sendToGoogleSheet(row){
       if (!isValidAppsScriptUrl(WEB_APP_URL)) { showToast("Bad /exec URL ❌"); return; }
-      const payload = JSON.stringify({ row });
-      try {
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(WEB_APP_URL, new Blob([payload], { type: "text/plain;charset=UTF-8" }));
+      const payload = JSON.stringify({ action: "append_tracker_row", row });
+      // Try CORS-friendly POST first to catch server errors
+      fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        redirect: "follow",
+      })
+      .then(async (res) => {
+        const text = await res.text();
+        let json = {}; try { json = JSON.parse(text); } catch {}
+        if (res.ok && json.ok) {
+          showToast("Sent to Sheets ✅");
         } else {
-          fetch(WEB_APP_URL, { method: "POST", mode: "no-cors", body: payload });
+          console.warn("Sheets POST response:", res.status, text);
+          // Fallback to no-cors for legacy handlers that don't return JSON
+          try {
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon(WEB_APP_URL, new Blob([JSON.stringify({ row })], { type: "text/plain;charset=UTF-8" }));
+              showToast("Sent to Sheets (fallback) ✅");
+            } else {
+              fetch(WEB_APP_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ row }) });
+              showToast("Sent to Sheets (fallback) ✅");
+            }
+          } catch (e) {
+            showToast("Send failed ❌");
+          }
         }
-        showToast("Sent to Sheets ✅");
-      } catch {
-        showToast("Send failed ❌");
-      }
+      })
+      .catch(err => { console.error(err); showToast("Network error ❌"); });
     }
 
     async function createDocAction(){
+      if (!isValidAppsScriptUrl(WEB_APP_URL)) { showToast("Bad /exec URL ❌"); return; }
+      const payload = JSON.stringify({ action: "create_proposal", proposal: buildProposal(), trackerRow: buildTrackerRow() });
+      try {
+        const r = await fetch(WEB_APP_URL, { method: "POST", headers: {"Content-Type":"application/json"}, body: payload });
+        const t = await r.text();
+        let j={}; try { j = JSON.parse(t); } catch {}
+        if (r.ok && j.ok && j.docUrl) { window.open(j.docUrl, "_blank"); showToast("Google Doc created ✅"); }
+        else { console.warn("Doc response:", r.status, t); showToast("Doc creation failed ❌"); }
+      } catch { showToast("Could not reach Apps Script ❌"); }
+    }(){
       if (!isValidAppsScriptUrl(WEB_APP_URL)) { showToast("Bad /exec URL ❌"); return; }
       const payload = JSON.stringify({ action: "create_proposal", proposal: buildProposal(), trackerRow: buildTrackerRow() });
       try {
@@ -309,62 +364,129 @@
     }
 
     // ====== SAVE/LOAD DRAFT ======
-    const DRAFT_KEY = "easybid_draft_v3";
-    function saveDraft(){
-      const draft = {
-        company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, license: $("coLicense").value, address: $("coAddress").value },
-        client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
-        project: { title: $("projTitle").value, ref: $("projRef").value, site: $("projSite").value, validDays: $("projValid").value },
-        notes: $("notes").value,
-        terms: $("terms").value,
-        items
-      };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-      showToast("Draft saved ✅");
-    }
+    const DRAFTS_KEY = "easybid_drafts_v1"; // name -> draft object
+const LAST_KEY = "easybid_last_draft_name";
 
-    function loadDraft(){
-      try {
-        const raw = localStorage.getItem(DRAFT_KEY);
-        if (!raw) { showToast("No saved draft ❌"); return; }
-        const d = JSON.parse(raw);
-        $("coName").value = d.company?.name || "";
-        $("coPhone").value = d.company?.phone || "";
-        $("coEmail").value = d.company?.email || "";
-        $("coLicense").value = d.company?.license || "";
-        $("coAddress").value = d.company?.address || "";
-        $("clientName").value = d.client?.name || "";
-        $("clientEmail").value = d.client?.email || "";
-        $("clientPhone").value = d.client?.phone || "";
-        $("clientAddress").value = d.client?.address || "";
-        $("projTitle").value = d.project?.title || "";
-        $("projRef").value = d.project?.ref || "";
-        $("projSite").value = d.project?.site || "";
-        $("projValid").value = d.project?.validDays || 30;
-        $("notes").value = d.notes || "";
-        $("terms").value = d.terms || "";
-        items = Array.isArray(d.items) ? d.items : [];
-        if (items.length === 0) items.push(defaultItem());
-        render();
-        showToast("Draft loaded ✅");
-      } catch(e){
-        console.error(e);
-        showToast("Could not load draft ❌");
-      }
-    }
+function currentDraftName(){ return (document.getElementById("draftName").value || "").trim(); }
+function loadDraftsMap(){ try { return JSON.parse(localStorage.getItem(DRAFTS_KEY) || "{}"); } catch { return {}; } }
+function saveDraftsMap(map){ localStorage.setItem(DRAFTS_KEY, JSON.stringify(map)); }
+function refreshDraftSelect(selectName){
+  const map = loadDraftsMap();
+  const sel = document.getElementById("draftSelect");
+  sel.innerHTML = "";
+  const ph = document.createElement("option"); ph.value = ""; ph.textContent = "— select a saved draft —"; sel.appendChild(ph);
+  Object.keys(map).sort().forEach(name=>{ const o=document.createElement("option"); o.value=name; o.textContent=name; if(selectName && selectName===name) o.selected=true; sel.appendChild(o); });
+}
 
-    function newDraft(){
-      items = [];
-      addRow();
-      $("notes").value = "";
-      $("terms").value = "Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.";
-      showToast("New draft ready");
-    }
+function collectDraft(){
+  return {
+    company: { name: $("coName").value, phone: $("coPhone").value, email: $("coEmail").value, license: $("coLicense").value, address: $("coAddress").value },
+    client:  { name: $("clientName").value, email: $("clientEmail").value, phone: $("clientPhone").value, address: $("clientAddress").value },
+    project: { title: $("projTitle").value, ref: $("projRef").value, site: $("projSite").value, validDays: $("projValid").value },
+    notes: $("notes").value,
+    terms: $("terms").value,
+    items
+  };
+}
 
-    // ====== WIRE UP UI ======
+function applyDraft(d){
+  $("coName").value = d.company?.name || "";
+  $("coPhone").value = d.company?.phone || "";
+  $("coEmail").value = d.company?.email || "";
+  $("coLicense").value = d.company?.license || "";
+  $("coAddress").value = d.company?.address || "";
+  $("clientName").value = d.client?.name || "";
+  $("clientEmail").value = d.client?.email || "";
+  $("clientPhone").value = d.client?.phone || "";
+  $("clientAddress").value = d.client?.address || "";
+  $("projTitle").value = d.project?.title || "";
+  $("projRef").value = d.project?.ref || "";
+  $("projSite").value = d.project?.site || "";
+  $("projValid").value = d.project?.validDays || 30;
+  $("notes").value = d.notes || "";
+  $("terms").value = d.terms || "";
+  items = Array.isArray(d.items) ? d.items : [];
+  if (items.length === 0) items.push(defaultItem());
+  render();
+}
+
+// Single-click quick save/load for convenience
+function saveDraft(){
+  const name = currentDraftName() || ( $("projTitle").value ? $("projTitle").value.trim() : "Untitled" );
+  const map = loadDraftsMap();
+  map[name] = collectDraft();
+  saveDraftsMap(map);
+  localStorage.setItem(LAST_KEY, name);
+  refreshDraftSelect(name);
+  showToast(`Saved: ${name} ✅`);
+}
+function loadDraft(){
+  const map = loadDraftsMap();
+  const last = localStorage.getItem(LAST_KEY) || "";
+  if (!last || !map[last]) { showToast("No saved draft ❌"); return; }
+  document.getElementById("draftName").value = last;
+  applyDraft(map[last]);
+  showToast(`Loaded: ${last} ✅`);
+}
+function newDraft(){
+  items = []; addRow();
+  $("notes").value = "";
+  $("terms").value = "Payment terms: 50% deposit to schedule, balance upon substantial completion. Prices valid for 30 days.";
+  showToast("New draft ready");
+}
+
+// Multi-draft controls
+document.addEventListener("DOMContentLoaded", ()=>{
+  refreshDraftSelect(localStorage.getItem(LAST_KEY) || "");
+  const sel = document.getElementById("draftSelect");
+  sel.addEventListener("change", ()=>{ document.getElementById("draftName").value = sel.value; });
+});
+
+document.getElementById("saveAsBtn").addEventListener("click", ()=>{
+  const name = currentDraftName();
+  if (!name) return showToast("Enter a draft name ❌");
+  const map = loadDraftsMap();
+  map[name] = collectDraft();
+  saveDraftsMap(map);
+  localStorage.setItem(LAST_KEY, name);
+  refreshDraftSelect(name);
+  showToast(`Saved: ${name} ✅`);
+});
+
+document.getElementById("loadSelectedBtn").addEventListener("click", ()=>{
+  const sel = document.getElementById("draftSelect");
+  const name = sel.value;
+  if (!name) return showToast("Choose a saved draft ❌");
+  const map = loadDraftsMap();
+  if (!map[name]) return showToast("Draft not found ❌");
+  document.getElementById("draftName").value = name;
+  applyDraft(map[name]);
+  localStorage.setItem(LAST_KEY, name);
+  showToast(`Loaded: ${name} ✅`);
+});
+
+document.getElementById("deleteSelectedBtn").addEventListener("click", ()=>{
+  const sel = document.getElementById("draftSelect");
+  const name = sel.value;
+  if (!name) return showToast("Choose a saved draft ❌");
+  const map = loadDraftsMap();
+  if (!map[name]) return showToast("Draft not found ❌");
+  delete map[name];
+  saveDraftsMap(map);
+  if (localStorage.getItem(LAST_KEY) === name) localStorage.removeItem(LAST_KEY);
+  refreshDraftSelect("");
+  document.getElementById("draftName").value = "";
+  showToast(`Deleted: ${name} ✅`);
+});
+
+// ====== WIRE UP UI ======
     $("addLineBtn").onclick = () => addRow();
     $("clearBtn").onclick = () => { items = []; addRow(); };
-    $("sendToSheetsBtn").onclick = () => { const row = buildTrackerRow(); sendToGoogleSheet(row); };
+    $("sendToSheetsBtn").onclick = () => {
+    const row = buildTrackerRow();
+    console.log("Sending tracker row:", row);
+    sendToGoogleSheet(row);
+  };
     $("createDocBtn").onclick = createDocAction;
     $("printBtn").onclick = () => window.print();
     $("saveDraftBtn").onclick = saveDraft;
